@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prestige Car Detailing</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #0e0e0e;
+            color: #f4f4f4;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo img {
+            max-width: 350px;
+            width: 100%;
+            height: auto;
+        }
+        h1 {
+            text-align: center;
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+        .packages {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: space-between;
+        }
+        .package {
+            background-color: #1c1c1c;
+            border-radius: 8px;
+            padding: 20px;
+            flex: 1 1 calc(48% - 20px);
+            box-sizing: border-box;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .package h2 {
+            font-size: 24px;
+            margin: 0 0 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .package h2 span {
+            font-size: 22px;
+            color: #ffdf00;
+        }
+        .package ul {
+            list-style-type: none;
+            padding-left: 0;
+            margin: 0;
+        }
+        .package ul li {
+            margin-bottom: 8px;
+            padding-left: 20px;
+            position: relative;
+        }
+        .package ul li::before {
+            content: "\2022";
+            color: #ffdf00;
+            font-weight: bold;
+            display: inline-block; 
+            width: 12px;
+            margin-left: -20px;
+        }
+        @media (max-width: 768px) {
+            .package {
+                flex: 1 1 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <img src="0AE73E6D-67F2-44E1-AA1B-99166DDCE97F.JPG" alt="Prestige Car Detailing Logo">
+        </div>
+        <h1>Prestige Car Detailing</h1>
+        <div class="packages">
+            <div class="package">
+                <h2>Basic Detail <span>$100</span></h2>
+                <ul>
+                    <li>Snow foam on the car</li>
+                    <li>Contact wash</li>
+                    <li>Vacuumed interior</li>
+                    <li>Panels dusted</li>
+                </ul>
+            </div>
+            <div class="package">
+                <h2>Deluxe Detail <span>$125</span></h2>
+                <ul>
+                    <li>Everything in Basic Detail package</li>
+                    <li>Ceramic spray to protect your car for up to 3 months</li>
+                </ul>
+            </div>
+            <div class="package">
+                <h2>Platinum Detail <span>$200</span></h2>
+                <ul>
+                    <li>Everything in Basic Detail</li>
+                    <li>Tire shine</li>
+                    <li>Rain‑X</li>
+                    <li>Interior detail cleaner</li>
+                    <li>Headlight restoration (if needed) <em>+ $20</em></li>
+                    <li>Clay bar treatment</li>
+                    <li>Polish</li>
+                    <li>Ceramic spray coating (3 weeks of protection)</li>
+                </ul>
+            </div>
+            <div class="package">
+                <h2>Premium Detail <span>$400</span></h2>
+                <ul>
+                    <li>Complete interior detail</li>
+                    <li>Touch‑less foam wash</li>
+                    <li>Hand wash</li>
+                    <li>Clay bar treatment (removes all embedded contaminants)</li>
+                    <li>Paint correction steps:</li>
+                    <li style="list-style-type: circle; margin-left: 20px;">Compound (if needed) – fixes deep swirls and light scratches</li>
+                    <li style="list-style-type: circle; margin-left: 20px;">Polish (buffs out light swirls &amp; watermarks) – finishing touch for your paint</li>
+                    <li>The final touch – ceramic coating adds 2 or more years of protection to your paint</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
