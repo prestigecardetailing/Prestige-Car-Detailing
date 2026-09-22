@@ -6,7 +6,7 @@ export function BrandMark({ className }: { className?: string }) {
       viewBox="0 0 48 48"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn("size-10", className)}
+      className={cn("size-9 shrink-0 sm:size-10", className)}
       aria-hidden="true"
     >
       <circle
@@ -55,14 +55,16 @@ export function BrandLockup({
   wordmark?: boolean;
 }) {
   return (
-    <span className={cn("inline-flex items-center gap-3", className)}>
+    <span
+      className={cn("inline-flex min-w-0 items-center gap-2 sm:gap-3", className)}
+    >
       <BrandMark className={markClassName} />
       {wordmark ? (
-        <span className="leading-none">
-          <span className="font-heading block text-[1.15rem] font-semibold tracking-[0.22em] text-foreground">
+        <span className="min-w-0 leading-none">
+          <span className="font-heading block truncate text-[0.95rem] font-semibold tracking-[0.16em] text-foreground sm:text-[1.15rem] sm:tracking-[0.22em]">
             PRESTIGE
           </span>
-          <span className="mt-1 block text-[0.62rem] font-medium tracking-[0.34em] text-silver uppercase">
+          <span className="mt-0.5 block truncate text-[0.55rem] font-medium tracking-[0.28em] text-silver uppercase sm:mt-1 sm:text-[0.62rem] sm:tracking-[0.34em]">
             Car Wash
           </span>
         </span>

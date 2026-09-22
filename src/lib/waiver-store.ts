@@ -125,6 +125,9 @@ export async function storeWaiverPdf(
   };
   memoryStore().set(id, record);
   await Promise.all([writeTmp(record), writeBlob(record)]);
+  // Path-style URL (no query params — some mail clients strip them).
+  // Absolute form is preferred for FormSubmit emails; callers may also
+  // resolve relative paths against window.location.origin.
   return {
     id,
     filename: safeName,

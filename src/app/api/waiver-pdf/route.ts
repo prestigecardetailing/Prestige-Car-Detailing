@@ -106,8 +106,15 @@ export async function POST(request: NextRequest) {
       `prestige-waiver-${name.replace(/\s+/g, "-").toLowerCase().slice(0, 40)}.pdf`,
     );
 
+    // Prefer absolute path-style PDF URLs so FormSubmit / mail clients keep the link
+    const origin =
+      request.headers.get("x-forwarded-host")
+        ? `${request.headers.get("x-forwarded-proto") || "https"}://${request.headers.get("x-forwarded-host")}`
+        : new URL(request.url).origin;
+    const absoluteUrl = `${origin}/api/waiver-pdf/${stored.id}`;
+
     return NextResponse.json({
-      url: stored.url,
+      url: absoluteUrl,
       filename: stored.filename,
       id: stored.id,
     });
