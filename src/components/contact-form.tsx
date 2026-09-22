@@ -138,8 +138,6 @@ export function ContactForm() {
       name="contact"
       method="POST"
       action="/"
-      data-netlify="true"
-      data-netlify-honeypot="company"
       onSubmit={onSubmit}
       className="relative space-y-5"
       noValidate

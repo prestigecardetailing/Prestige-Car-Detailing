@@ -48,31 +48,6 @@ export default function RootLayout({
       className={`${outfit.variable} ${cormorant.variable} ${geistMono.variable} dark h-full`}
     >
       <body className="flex min-h-full flex-col antialiased">
-        {/* Netlify Forms detection */}
-        <form
-          name="contact"
-          data-netlify="true"
-          data-netlify-honeypot="company"
-          hidden
-        >
-          <input name="name" />
-          <input name="phone" />
-          <input name="location" />
-          <input name="vehicle" />
-          <input name="message" />
-          <input name="intent" />
-          <input name="company" />
-        </form>
-        <form name="waiver" data-netlify="true" hidden>
-          <input name="name" />
-          <input name="agreedAt" />
-          <input name="packageName" />
-          <input name="waiverText" />
-        </form>
-        <form name="other-fee" data-netlify="true" hidden>
-          <input name="description" />
-          <input name="amount" />
-        </form>
         <SiteHeader />
         <main className="flex-1">{children}</main>
         <SiteFooter />
