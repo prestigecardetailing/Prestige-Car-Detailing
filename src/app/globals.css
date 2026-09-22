@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+:root {
+  --background: #050402;
+  --foreground: #f1eee6;
+  --gold: #ecc663;
+  --gold-soft: #c8a65d;
+  --silver: #b4b1a7;
+  --card: #0e0c08;
+  --card-foreground: #f1eee6;
+  --popover: #0e0c08;
+  --popover-foreground: #f1eee6;
+  --primary: #ecc663;
+  --primary-foreground: #120c04;
+  --secondary: #181611;
+  --secondary-foreground: #f1eee6;
+  --muted: #181611;
+  --muted-foreground: #b4b1a7;
+  --accent: #1f1a10;
+  --accent-foreground: #f1eee6;
+  --destructive: #f97770;
+  --border: #ffffff1f;
+  --input: #ffffff24;
+  --ring: #ecc663;
+  --radius: 0.7rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-silver: var(--silver);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-md: calc(var(--radius) * 0.8);
+  --font-sans: var(--font-outfit);
+  --font-heading: var(--font-cormorant);
+  --font-mono: var(--font-geist-mono);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background:
+      radial-gradient(1200px 600px at 10% -10%, #2a2214 0%, transparent 55%),
+      radial-gradient(900px 500px at 90% 0%, #1a1814 0%, transparent 50%),
+      var(--background);
+    color: var(--foreground);
+    font-family: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+    min-height: 100%;
+  }
+
+  .font-heading {
+    font-family: var(--font-cormorant), ui-serif, Georgia, serif;
+  }
+
+  a {
+    text-underline-offset: 3px;
+  }
+}
