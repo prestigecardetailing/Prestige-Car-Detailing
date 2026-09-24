@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,11 @@ import {
   packages,
   resolveSelection,
 } from "@/lib/catalog";
-import { rememberPendingBooking } from "@/lib/booking-session";
+import {
+  clearPendingBooking,
+  readPendingBooking,
+  rememberPendingBooking,
+} from "@/lib/booking-session";
 import { cn } from "@/lib/cn";
 import { notifyOwnerFromBrowser } from "@/lib/notify-owner";
 import { createCheckout, openAmountLink, payConfigForSelection } from "@/lib/square";
@@ -70,6 +74,7 @@ function formatEastern(iso: string) {
  * after Square confirms the payment.
  */
 export function PayForm({ initialPackage }: { initialPackage?: string }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const fromQuery = getPackage(searchParams.get("package") || "")?.id;
   const slotId = (searchParams.get("slot") || "").trim();
@@ -175,6 +180,31 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     } finally {
       window.clearTimeout(timer);
     }
+  }
+
+  /**
+   * Undo before payment. Nothing is held at this point, so dropping the slot from
+   * the URL is enough to put it back in front of the next customer — but if this
+   * visit already opened a Square checkout, cancel that pending record too so any
+   * stray hold is released right away.
+   */
+  function clearSlotSelection() {
+    const pending = readPendingBooking();
+    if (pending?.bookingId) {
+      void fetch("/api/bookings/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId: pending.bookingId }),
+      }).catch(() => null);
+      clearPendingBooking();
+    }
+    setSlotLookup(null);
+    setSlotTaken(false);
+    setError(null);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("slot");
+    const query = params.toString();
+    router.replace(query ? `/pay?${query}` : "/pay", { scroll: false });
   }
 
   function openWaiverForPay() {
@@ -478,12 +508,28 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
                 reserved yet — we hold it the moment Square confirms your
                 payment. Leave without paying and it stays open for someone else.
               </p>
-              <Link
-                href="/book"
-                className="mt-3 inline-block text-sm text-gold underline underline-offset-4"
-              >
-                Pick a different window
-              </Link>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Link
+                  href="/book"
+                  className={cn(
+                    buttonVariants({ variant: "outline" }),
+                    "h-10 px-4",
+                  )}
+                >
+                  Change time
+                </Link>
+                <button
+                  type="button"
+                  onClick={clearSlotSelection}
+                  className={cn(
+                    buttonVariants({ variant: "ghost" }),
+                    "h-10 px-4",
+                  )}
+                  data-testid="clear-slot"
+                >
+                  Clear selection
+                </button>
+              </div>
             </>
           ) : (
             <>
