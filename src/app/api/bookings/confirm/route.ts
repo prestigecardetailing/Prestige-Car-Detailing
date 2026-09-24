@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { BookingRecord } from "@/lib/booking-store";
 import { getBooking } from "@/lib/booking-store";
-import { confirmBooking, flagBookingForReview } from "@/lib/bookings";
+import {
+  confirmBooking,
+  flagBookingForReview,
+  reschedulePolicy,
+} from "@/lib/bookings";
 import { hasSquareApi, verifySquarePayment } from "@/lib/square";
 
 export const dynamic = "force-dynamic";
@@ -14,8 +19,23 @@ export const dynamic = "force-dynamic";
  * page — or hitting it without paying — never takes a window off the board.
  *
  * Body: { bookingId?, referenceId?, orderId?, transactionId?, checkoutId?, adminToken? }
- * Reply: { status: "held" | "unpaid" | "review" | "unknown", slot?, booking? }
+ * Reply: {
+ *   status: "held" | "unpaid" | "review" | "unknown",
+ *   slot?, conflict?,
+ *   reference?,   // booking reference the customer uses on /reschedule
+ *   reschedule?   // { allowed, cutoffHours, deadline, deadlineLabel }
+ * }
  */
+function heldReply(record: BookingRecord | undefined, conflict: boolean) {
+  return NextResponse.json({
+    status: "held",
+    slot: record?.slot || null,
+    reference: record?.id,
+    reschedule: record ? reschedulePolicy(record) : null,
+    conflict,
+  });
+}
+
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const str = (value: unknown) =>
@@ -42,15 +62,11 @@ export async function POST(request: NextRequest) {
       verification: "manual",
       square: { orderId, paymentId, checkoutId },
     });
-    return NextResponse.json({
-      status: "held",
-      slot: result.booking?.slot || null,
-      conflict: result.reason === "slot-conflict",
-    });
+    return heldReply(result.booking, result.reason === "slot-conflict");
   }
 
   if (booking.status === "paid" && booking.hold) {
-    return NextResponse.json({ status: "held", slot: booking.slot });
+    return heldReply(booking, false);
   }
 
   const check = await verifySquarePayment({ orderId, paymentId });
@@ -63,11 +79,7 @@ export async function POST(request: NextRequest) {
         checkoutId,
       },
     });
-    return NextResponse.json({
-      status: "held",
-      slot: result.booking?.slot || null,
-      conflict: result.reason === "slot-conflict",
-    });
+    return heldReply(result.booking, result.reason === "slot-conflict");
   }
 
   if (check.checked) {

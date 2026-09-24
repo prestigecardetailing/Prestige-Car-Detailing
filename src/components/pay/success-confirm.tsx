@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { clearPendingBooking, readPendingBooking } from "@/lib/booking-session";
 import { site } from "@/lib/site";
 
@@ -8,6 +9,12 @@ type ConfirmReply = {
   status: "held" | "unpaid" | "review" | "unknown";
   slot?: { label: string; start: string } | null;
   conflict?: boolean;
+  reference?: string;
+  reschedule?: {
+    allowed: boolean;
+    cutoffHours: number;
+    deadlineLabel: string | null;
+  } | null;
 };
 
 /**
@@ -102,9 +109,25 @@ export function SuccessConfirm() {
             : "Payment confirmed."}
         </p>
         <p className="mt-2">
-          It is off the booking board now, and the shop has the details. To move
-          it, call {site.phone}.
+          It is off the booking board now, and the shop has the details.
         </p>
+        {reply.reference ? (
+          <p className="mt-4">
+            Booking reference:{" "}
+            <span className="font-mono text-foreground">{reply.reference}</span>{" "}
+            — save this. Need a different time?{" "}
+            <Link
+              href={`/reschedule?ref=${encodeURIComponent(reply.reference)}`}
+              className="text-gold underline underline-offset-4"
+            >
+              Move your booking
+            </Link>
+            {reply.reschedule?.deadlineLabel
+              ? ` until ${reply.reschedule.deadlineLabel} (${reply.reschedule.cutoffHours} hours before the window).`
+              : "."}{" "}
+            After that, call {site.phone}.
+          </p>
+        ) : null}
         {reply.conflict ? (
           <p className="mt-2 text-destructive">
             Heads up: another paid booking is on this window. We will call you to

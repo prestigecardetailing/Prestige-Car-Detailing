@@ -72,6 +72,8 @@ export type BookingRecord = {
   } | null;
   /** Set when the owner has been asked to confirm a payment we could not verify. */
   reviewNotifiedAt?: string;
+  /** Windows this booking used to sit on, oldest first, after self-service moves. */
+  previousSlots?: BookingSlot[];
 };
 
 export type SlotHold = {

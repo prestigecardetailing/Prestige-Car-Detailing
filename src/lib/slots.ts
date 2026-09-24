@@ -16,6 +16,8 @@ export type AvailabilityConfig = {
   slotMinutes: number;
   leadTimeHours: number;
   horizonDays: number;
+  /** A paid customer can move their own booking until this many hours before it starts. */
+  rescheduleCutoffHours: number;
   /** Recurring weekly openings: weekday name -> list of local start times ("08:00"). */
   weekly: Record<string, string[]>;
   /** One-off openings: "YYYY-MM-DD" -> list of local start times. */
@@ -58,6 +60,7 @@ const fallback: AvailabilityConfig = {
   slotMinutes: 240,
   leadTimeHours: 12,
   horizonDays: 21,
+  rescheduleCutoffHours: 24,
   weekly: {},
   extraDates: {},
   blackoutDates: [],
@@ -101,6 +104,12 @@ function normalizeConfig(raw: Record<string, unknown>): AvailabilityConfig {
     slotMinutes: num(raw.slotMinutes, fallback.slotMinutes, 30, 12 * 60),
     leadTimeHours: num(raw.leadTimeHours, fallback.leadTimeHours, 0, 24 * 30),
     horizonDays: num(raw.horizonDays, fallback.horizonDays, 1, 120),
+    rescheduleCutoffHours: num(
+      raw.rescheduleCutoffHours,
+      fallback.rescheduleCutoffHours,
+      0,
+      24 * 14,
+    ),
     weekly,
     extraDates,
     blackoutDates: Array.isArray(raw.blackoutDates)
@@ -231,6 +240,21 @@ export function slotLabel(startMs: number, endMs: number, timeZone: string) {
       .formatToParts(new Date(startMs))
       .find((p) => p.type === "timeZoneName")?.value || "";
   return `${day} · ${time(startMs)} – ${time(endMs)} ${zone}`.trim();
+}
+
+/** "Thu, Sep 24, 11:00 PM EDT" — for deadlines and confirmations. */
+export function formatMoment(iso: string, timeZone: string) {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return iso;
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(ms));
 }
 
 function buildSlot(

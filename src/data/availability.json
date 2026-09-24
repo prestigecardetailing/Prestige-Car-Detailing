@@ -4,6 +4,7 @@
   "slotMinutes": 240,
   "leadTimeHours": 12,
   "horizonDays": 21,
+  "rescheduleCutoffHours": 24,
   "weekly": {
     "sunday": [],
     "monday": ["08:00", "13:00"],

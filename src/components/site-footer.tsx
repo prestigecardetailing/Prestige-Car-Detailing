@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { BrandLockup } from "@/components/brand";
 import { navItems, site } from "@/lib/site";
+import { availabilityConfig } from "@/lib/slots";
 
 export function SiteFooter() {
+  const { rescheduleCutoffHours } = availabilityConfig();
   return (
     <footer className="mt-auto border-t border-white/8 bg-[#08080a]">
       <div className="mx-auto grid w-full max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.2fr_0.8fr_0.8fr]">
@@ -35,6 +37,14 @@ export function SiteFooter() {
             <li>
               <Link href="/pay" className="text-silver hover:text-foreground">
                 Pay in full
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/reschedule"
+                className="text-silver hover:text-foreground"
+              >
+                Move a booking
               </Link>
             </li>
             <li>
@@ -86,8 +96,9 @@ export function SiteFooter() {
       <div className="border-t border-white/8">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-6 text-xs text-silver/80 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p>
-            © {new Date().getFullYear()} {site.name}. Prepaid bookings.
-            Reschedule through the message form.
+            © {new Date().getFullYear()} {site.name}. Prepaid bookings. Move a
+            booking yourself up to {rescheduleCutoffHours} hours before it
+            starts.
           </p>
           <Link href="/privacy" className="hover:text-foreground">
             Privacy

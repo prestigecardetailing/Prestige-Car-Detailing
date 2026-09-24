@@ -88,6 +88,50 @@ async function accessToken(env: EnvLike): Promise<string | null> {
   return data.access_token || null;
 }
 
+/** Move an existing hold to a new window. Falls back to `skipped` when unconfigured. */
+export async function updateCalendarHold(
+  eventId: string,
+  input: CalendarEventInput,
+  env: EnvLike = process.env,
+): Promise<CalendarResult> {
+  if (!googleCalendarConfigured(env)) {
+    return { status: "skipped", detail: "Google Calendar env vars not set" };
+  }
+  try {
+    const token = await accessToken(env);
+    if (!token) return { status: "failed", detail: "Could not mint Google token" };
+
+    const calendarId = encodeURIComponent((env.GOOGLE_CALENDAR_ID || "").trim());
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(eventId)}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          summary: input.summary,
+          description: input.description,
+          location: input.location,
+          start: { dateTime: input.startIso, timeZone: input.timeZone },
+          end: { dateTime: input.endIso, timeZone: input.timeZone },
+        }),
+      },
+    );
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.warn("Google Calendar patch failed", res.status, detail.slice(0, 300));
+      return { status: "failed", detail: `HTTP ${res.status}` };
+    }
+    const data = (await res.json()) as { id?: string };
+    return { status: "created", eventId: data.id || eventId };
+  } catch (err) {
+    console.warn("Google Calendar patch threw", err);
+    return { status: "failed", detail: "exception" };
+  }
+}
+
 export async function createCalendarHold(
   input: CalendarEventInput,
   env: EnvLike = process.env,
