@@ -25,6 +25,30 @@ A calendar window is **never** reserved by picking it. The order is:
 Abandoning Square, closing the tab, or a declined card leaves the window listed
 on `/book` for the next customer.
 
+### Undo before payment
+
+Nothing is held before payment, so undoing is just dropping the selection.
+`/pay` shows **Change time** (back to the picker) and **Clear selection** next to
+the chosen window. Clearing removes the `slot` query param and, if this visit had
+already opened a Square checkout, calls `POST /api/bookings/cancel` to mark that
+pending record cancelled and release any hold pointing at it. The window is
+immediately bookable again.
+
+### Reschedule after payment
+
+A paid customer can move their own booking until **24 hours before the window
+starts** (`rescheduleCutoffHours` in `src/data/availability.json`). Inside that,
+the UI blocks the change and tells them to call 864-619-4911.
+
+The booking reference shown on `/pay/success` (and in the shop's paid-booking
+email) is the key: `/reschedule?ref=<reference>` looks the booking up, shows the
+deadline, and lists the open windows. Moving holds the new window, releases the
+old one, patches the Google Calendar event when one exists, and emails the shop.
+
+- `GET /api/bookings/lookup?ref=…` — booking summary plus the reschedule policy
+- `POST /api/bookings/reschedule` `{ ref, slotId }` — 409 `code: "too-late"` inside the cutoff
+- `POST /api/bookings/cancel` `{ bookingId }` — undo an unpaid selection
+
 The public Google Appointment Schedule iframe was removed on purpose: finishing a
 Google booking holds the slot immediately, before payment. `BOOKING_CALENDAR_URL`
 in `src/lib/site.ts` is kept as an admin-only reference.
@@ -39,6 +63,8 @@ Edit `src/data/availability.json` and deploy:
 - `slotMinutes` — appointment length (currently 240 = 4 hours)
 - `leadTimeHours` — how far ahead of "now" the first bookable window can be
 - `horizonDays` — how far out the list runs
+- `rescheduleCutoffHours` — self-service reschedule closes this long before the
+  window starts (24)
 
 To change hours without a deploy, set the `PRESTIGE_AVAILABILITY` env var to a
 JSON object with the same keys; it is merged over the file.
