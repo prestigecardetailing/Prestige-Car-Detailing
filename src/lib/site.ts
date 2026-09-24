@@ -23,6 +23,13 @@ export function hostedOnNetlify() {
   return host === "prestigecarwashsc.com" || host.endsWith(".netlify.app");
 }
 
+/**
+ * Admin reference only. The public site no longer embeds this Google Appointment
+ * Schedule: finishing a Google booking holds the slot immediately, before the
+ * customer has paid. Open availability now lives in `src/data/availability.json`
+ * and is served by `/api/open-slots`; the calendar below stays useful as Emory's
+ * own view of the week.
+ */
 export const BOOKING_CALENDAR_URL =
   "https://calendar.google.com/calendar/appointments/schedules/AcZssZ1upBXBWtg3UJKVlTGvvMK4t7mh-42uC4D-OmqYOl6KwFz3kRBuCCfpymCwIzFx30wgD58R8TmS?gv=true";
 

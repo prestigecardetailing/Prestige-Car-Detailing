@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,10 +14,12 @@ import {
   packages,
   resolveSelection,
 } from "@/lib/catalog";
+import { rememberPendingBooking } from "@/lib/booking-session";
 import { cn } from "@/lib/cn";
 import { notifyOwnerFromBrowser } from "@/lib/notify-owner";
 import { createCheckout, openAmountLink, payConfigForSelection } from "@/lib/square";
 import { hostedOnNetlify, site } from "@/lib/site";
+import type { OpenSlot } from "@/lib/slots";
 import {
   WAIVER_CLOSING,
   WAIVER_DISCLAIMER,
@@ -61,11 +64,20 @@ function formatEastern(iso: string) {
  * - Hard modal: Esc / backdrop do not dismiss; Cancel Pay or complete (agree + typed name).
  * - Other fees path skips the waiver.
  * - Checkbox enabled only after scrolling the waiver body to the bottom.
+ *
+ * WO (2026-09-24): pay-first booking. A window arrives as ?slot=<id> from /book and
+ * is shown here, but nothing is reserved — the hold is written server-side only
+ * after Square confirms the payment.
  */
 export function PayForm({ initialPackage }: { initialPackage?: string }) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const fromQuery = getPackage(searchParams.get("package") || "")?.id;
+  const slotId = (searchParams.get("slot") || "").trim();
+  const [slotLookup, setSlotLookup] = useState<{
+    id: string;
+    slot: OpenSlot | null;
+  } | null>(null);
+  const [slotTaken, setSlotTaken] = useState(false);
   const [packageId, setPackageId] = useState(
     fromQuery || initialPackage || packages[0]?.id || "interior",
   );
@@ -92,6 +104,17 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     () => resolveSelection(packageId, addonIds),
     [packageId, addonIds],
   );
+  const lookupReady = !!slotId && slotLookup?.id === slotId;
+  const slot = lookupReady ? slotLookup.slot : null;
+  const slotState: "none" | "loading" | "open" | "taken" = !slotId
+    ? "none"
+    : slotTaken
+      ? "taken"
+      : !lookupReady
+        ? "loading"
+        : slot
+          ? "open"
+          : "taken";
   const selectionKey = `${packageId}:${addonIds.join(",")}`;
   const localConfig = useMemo(
     () => payConfigForSelection(packageId, addonIds),
@@ -169,7 +192,12 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     setError(null);
   }
 
-  async function checkoutPackage() {
+  async function checkoutPackage(waiver?: {
+    name: string;
+    agreedAt: string;
+    pdfUrl: string;
+    pdfId: string;
+  }) {
     setError(null);
     setLoading(true);
     try {
@@ -177,12 +205,30 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         const res = await fetch("/api/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ packageId, addonIds }),
+          body: JSON.stringify({
+            packageId,
+            addonIds,
+            slotId: slotState === "open" ? slot?.id : undefined,
+            name: waiver?.name || signerName.trim() || undefined,
+            waiver,
+          }),
         });
+        if (res.status === 409) {
+          const data = await res.json().catch(() => ({}));
+          setSlotTaken(true);
+          setError(
+            data.error ||
+              "That window was just taken. Pick another open time on the Book page.",
+          );
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
           if (data.url) {
-            router.push(data.url);
+            if (data.bookingId) {
+              rememberPendingBooking(data.bookingId, slot?.id || "");
+            }
+            window.location.assign(data.url);
             return;
           }
         }
@@ -195,11 +241,11 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         window.location.origin,
       );
       if (fallback?.url) {
-        router.push(fallback.url);
+        window.location.assign(fallback.url);
         return;
       }
       if (squareOpen) {
-        router.push(squareOpen);
+        window.location.assign(squareOpen);
         return;
       }
       setError("Square is not connected for this selection yet.");
@@ -230,6 +276,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         addonIds: addonIds.join(","),
         addonNames,
         total: totalLabel,
+        window: slotState === "open" && slot ? slot.label : "No window selected",
         waiverVersion: WAIVER_VERSION,
         payUrl: `${site.url}/pay`,
         pdfUrl: pdf.url,
@@ -286,6 +333,9 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
           `Legal name (signature): ${name}`,
           `Signed at (ISO): ${at}`,
           `Signed at (America/New_York): ${eastern}`,
+          `Window requested: ${
+            slotState === "open" && slot ? slot.label : "No window selected"
+          } (not held until Square clears)`,
           `Package: ${selection.pkg.name}`,
           `Add-ons: ${addonNames}`,
           `Total shown: ${totalLabel}`,
@@ -300,7 +350,12 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
 
       setAgreedAt(at);
       setWaiverOpen(false);
-      await checkoutPackage();
+      await checkoutPackage({
+        name,
+        agreedAt: at,
+        pdfUrl: pdf.url,
+        pdfId: pdf.id,
+      });
     } catch (err) {
       console.warn("Waiver record failed", err);
       setError("Could not save the waiver. Please try again.");
@@ -360,6 +415,25 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     return () => controller.abort();
   }, [packageId, addonIds]);
 
+  // Confirm the window from /book is still open. Looking is free — nothing is
+  // reserved here, and the same check runs again server-side at checkout.
+  useEffect(() => {
+    if (!slotId) return;
+    const controller = new AbortController();
+    fetch("/api/open-slots", { cache: "no-store", signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { slots?: OpenSlot[] } | null) => {
+        setSlotLookup({
+          id: slotId,
+          slot: data?.slots?.find((s) => s.id === slotId) || null,
+        });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setSlotLookup({ id: slotId, slot: null });
+      });
+    return () => controller.abort();
+  }, [slotId]);
+
   useEffect(() => {
     const el = waiverRef.current;
     if (el && waiverOpen && el.scrollHeight <= el.clientHeight + 8) {
@@ -381,6 +455,60 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
 
   return (
     <div className="space-y-10">
+      {slotState !== "none" ? (
+        <div
+          className={cn(
+            "rounded-xl p-5 ring-1 sm:p-6",
+            slotState === "open"
+              ? "bg-gold/8 ring-gold/50"
+              : "bg-[#121216] ring-white/10",
+          )}
+          data-testid="selected-slot"
+        >
+          <p className="text-xs tracking-[0.24em] text-gold uppercase">
+            {slotState === "open" ? "Window you picked" : "Window"}
+          </p>
+          {slotState === "loading" ? (
+            <p className="mt-2 text-sm text-silver">Checking that window…</p>
+          ) : slotState === "open" && slot ? (
+            <>
+              <p className="font-heading mt-2 text-2xl">{slot.label}</p>
+              <p className="mt-2 text-sm leading-relaxed text-silver">
+                Still open. It is <strong className="text-silver">not</strong>{" "}
+                reserved yet — we hold it the moment Square confirms your
+                payment. Leave without paying and it stays open for someone else.
+              </p>
+              <Link
+                href="/book"
+                className="mt-3 inline-block text-sm text-gold underline underline-offset-4"
+              >
+                Pick a different window
+              </Link>
+            </>
+          ) : (
+            <>
+              <p className="font-heading mt-2 text-2xl">
+                That window is no longer on the board.
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-silver">
+                Someone paid for it first, or it aged out. Pick another open time
+                — you can still pay for a package here and we will call to
+                schedule.
+              </p>
+              <Link
+                href="/book"
+                className={cn(
+                  buttonVariants({ variant: "outline" }),
+                  "mt-4 h-10 px-4",
+                )}
+              >
+                See open windows
+              </Link>
+            </>
+          )}
+        </div>
+      ) : null}
+
       <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-8">
           <fieldset>
@@ -481,6 +609,11 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
             <p className="mt-2 text-sm text-silver">
               Pay in full up front. No sales tax is added on this page.
             </p>
+            {slotState === "open" && slot ? (
+              <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-sm text-gold">
+                {slot.label}
+              </p>
+            ) : null}
             <ul className="mt-6 space-y-3 text-sm" data-testid="order-lines">
               {selection.lines.map((line) => (
                 <li key={line.id} className="flex justify-between gap-4">

@@ -15,9 +15,10 @@ export default function PayPage() {
         Pay the package in full.
       </h1>
       <p className="mt-5 max-w-2xl text-lg leading-relaxed text-silver">
-        Choose a package and add-ons freely. When you click Pay, you&apos;ll
-        sign the liability waiver, then continue to Square. Prepaid before we
-        arrive.
+        Choose a package and add-ons freely. When you click Pay, you&apos;ll sign
+        the liability waiver, then continue to Square. If you came from a window
+        on the Book page, that window is reserved for you only after Square
+        confirms the payment.
       </p>
       <div className="mt-10">
         <Suspense fallback={<p className="text-silver">Loading pay form…</p>}>
