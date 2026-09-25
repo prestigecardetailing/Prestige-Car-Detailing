@@ -27,10 +27,12 @@ on `/book` for the next customer.
 
 ### Caller info required before any booking confirm
 
-Name and phone are **required** before a customer reaches Square; email is
-offered but **optional**. The `Your info` fieldset sits at the top of `/pay`,
-and clicking Pay with a missing name, a missing phone, or an unparseable phone
-shows field-level errors and never opens the waiver or Square.
+Name, phone, and the **physical service address** are required before a customer
+reaches Square; email is offered but **optional**. The `Your info` fieldset sits
+at the top of `/pay`, and clicking Pay with any required field missing — or an
+unparseable phone, or an address with no street number — shows field-level
+errors and never opens the waiver or Square. The address is also what lands on
+the Google Calendar event as the event location.
 
 `src/lib/contact.ts` holds the one validator both sides use. `/api/checkout`
 re-runs it and answers `400 { code: "contact-required", fields: {…} }`, so the
@@ -39,7 +41,7 @@ pre-fill the Square checkout screen (`pre_populated_data`), and appear in the
 waiver and owner emails.
 
 **Phone/voice path:** when a `book_slot` tool is wired for the phone agent it
-must collect the same two required fields and call `validateContact` before
+must collect the same three required fields and call `validateContact` before
 creating a booking. The web flow enforces it today.
 
 ### Undo before payment

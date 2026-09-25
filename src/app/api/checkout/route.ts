@@ -27,12 +27,14 @@ export async function POST(request: NextRequest) {
     const contact = validateContact({
       name: body.name,
       phone: body.phone,
+      address: body.address ?? body.location,
       email: body.email,
     });
     if (!contact.ok) {
       return NextResponse.json(
         {
-          error: "Name and phone are required before payment.",
+          error:
+            "Name, phone, and the service address are required before payment.",
           code: "contact-required",
           fields: contact.errors,
         },
@@ -58,7 +60,7 @@ export async function POST(request: NextRequest) {
         phone: contact.value.phoneDisplay,
         email: contact.value.email || undefined,
         vehicle: str(body.vehicle),
-        location: str(body.location, 240),
+        location: contact.value.address,
       },
       waiver: body.waiver
         ? {

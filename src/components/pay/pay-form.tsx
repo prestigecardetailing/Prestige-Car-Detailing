@@ -98,6 +98,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   // Caller info. Name and phone are required before we hand anyone to Square.
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
+  const [contactAddress, setContactAddress] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactErrors, setContactErrors] = useState<ContactErrors>({});
 
@@ -148,6 +149,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const contact = validateContact({
     name: contactName,
     phone: contactPhone,
+    address: contactAddress,
     email: contactEmail,
   });
 
@@ -257,6 +259,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
             slotId: slotState === "open" ? slot?.id : undefined,
             name: contact.value?.name,
             phone: contact.value?.phone,
+            address: contact.value?.address,
             email: contact.value?.email || undefined,
             waiver,
           }),
@@ -327,6 +330,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         window: slotState === "open" && slot ? slot.label : "No window selected",
         phone: contact.value?.phoneDisplay || "",
         email: contact.value?.email || "",
+        location: contact.value?.address || "",
         waiverVersion: WAIVER_VERSION,
         payUrl: `${site.url}/pay`,
         pdfUrl: pdf.url,
@@ -363,6 +367,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         subject: `Prestige Car Wash waiver — ${name}`,
         name,
         phone: contact.value?.phoneDisplay || "",
+        location: contact.value?.address || "",
         pdf: pdf.url,
         pdfId: pdf.id,
         message: [
@@ -383,6 +388,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
           "",
           `Legal name (signature): ${name}`,
           `Phone: ${contact.value?.phoneDisplay || "(not given)"}`,
+          `Service address: ${contact.value?.address || "(not given)"}`,
           `Email: ${contact.value?.email || "(not given)"}`,
           `Signed at (ISO): ${at}`,
           `Signed at (America/New_York): ${eastern}`,
@@ -421,13 +427,22 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   function contactReadyOrBlock() {
     setContactErrors(contact.errors);
     if (contact.ok) return true;
+    const missingRequired =
+      contact.errors.name || contact.errors.phone || contact.errors.address;
     setError(
-      contact.errors.name || contact.errors.phone
-        ? "Add your name and phone number before continuing to payment."
+      missingRequired
+        ? "Add your name, phone, and service address before continuing to payment."
         : "Check the contact details above before continuing to payment.",
     );
+    const firstBad = contact.errors.name
+      ? "contact-name"
+      : contact.errors.phone
+        ? "contact-phone"
+        : contact.errors.address
+          ? "contact-address"
+          : "contact-email";
     document
-      .getElementById("contact-name")
+      .getElementById(firstBad)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
     return false;
   }
@@ -658,6 +673,32 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
                 ) : null}
               </div>
               <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="contact-address">
+                  Service address <span className="text-gold">(required)</span>
+                </Label>
+                <Textarea
+                  id="contact-address"
+                  name="address"
+                  value={contactAddress}
+                  onChange={(e) => {
+                    setContactAddress(e.target.value);
+                    setContactErrors((prev) => ({ ...prev, address: undefined }));
+                    setError(null);
+                  }}
+                  autoComplete="street-address"
+                  maxLength={240}
+                  placeholder="123 Main St, Simpsonville SC 29681 — add apartment, gate code, or where the car sits"
+                  aria-required="true"
+                  aria-invalid={!!contactErrors.address}
+                  className="min-h-20"
+                />
+                {contactErrors.address ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {contactErrors.address}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="contact-email">
                   Email <span className="text-silver/70">(optional)</span>
                 </Label>
@@ -816,8 +857,8 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
             )}
             {!contact.ok ? (
               <p className="mt-2 text-xs text-silver" data-testid="contact-hint">
-                Your name and phone go in above before you can continue to
-                payment. Email is optional.
+                Your name, phone, and service address go in above before you can
+                continue to payment. Email is optional.
               </p>
             ) : null}
             <Button
