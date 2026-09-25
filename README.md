@@ -25,6 +25,23 @@ A calendar window is **never** reserved by picking it. The order is:
 Abandoning Square, closing the tab, or a declined card leaves the window listed
 on `/book` for the next customer.
 
+### Caller info required before any booking confirm
+
+Name and phone are **required** before a customer reaches Square; email is
+offered but **optional**. The `Your info` fieldset sits at the top of `/pay`,
+and clicking Pay with a missing name, a missing phone, or an unparseable phone
+shows field-level errors and never opens the waiver or Square.
+
+`src/lib/contact.ts` holds the one validator both sides use. `/api/checkout`
+re-runs it and answers `400 { code: "contact-required", fields: {…} }`, so the
+form is not the only guard. The normalized values land on the booking record,
+pre-fill the Square checkout screen (`pre_populated_data`), and appear in the
+waiver and owner emails.
+
+**Phone/voice path:** when a `book_slot` tool is wired for the phone agent it
+must collect the same two required fields and call `validateContact` before
+creating a booking. The web flow enforces it today.
+
 ### Undo before payment
 
 Nothing is held before payment, so undoing is just dropping the selection.
