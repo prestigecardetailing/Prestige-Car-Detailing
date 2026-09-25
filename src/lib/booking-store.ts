@@ -74,6 +74,15 @@ export type BookingRecord = {
   reviewNotifiedAt?: string;
   /** Windows this booking used to sit on, oldest first, after self-service moves. */
   previousSlots?: BookingSlot[];
+  /** Post-payment confirmation text. `to` is masked; the body is kept for support. */
+  sms?: {
+    status: "sent" | "stubbed" | "failed" | "blocked" | "skipped";
+    to?: string;
+    provider?: string;
+    detail?: string;
+    body?: string;
+    at: string;
+  };
   /** Written when a paid booking is cancelled, including how the refund was handled. */
   cancellation?: {
     cancelledAt: string;

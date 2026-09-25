@@ -20,6 +20,7 @@ import {
 } from "@/lib/google-calendar";
 import { notifyOwnerFromServer } from "@/lib/notify-owner";
 import { refundSquarePayment } from "@/lib/square";
+import { sendBookingConfirmationSms } from "@/lib/sms";
 import { site } from "@/lib/site";
 import {
   availabilityConfig,
@@ -218,6 +219,12 @@ export async function confirmBooking(
       })
     : { status: "skipped", detail: "No slot on this payment" };
 
+  // Payment cleared and the window is held — text the customer their booking.
+  const sms = await sendBookingConfirmationSms(record).catch((err) => {
+    console.warn("Confirmation SMS threw", err);
+    return { status: "failed" as const, detail: "exception" };
+  });
+
   const notify = await notifyOwnerFromServer({
     subject: record.slot
       ? `Prestige PAID booking — ${record.slot.label}`
@@ -240,6 +247,13 @@ export async function confirmBooking(
       heldOk
         ? ""
         : "WARNING: another paid booking already holds this window. Call the customer.",
+      sms.status === "sent"
+        ? `Confirmation SMS sent to ${sms.to}.`
+        : sms.status === "stubbed"
+          ? "Confirmation SMS: rail not wired yet (PRESTIGE_SMS_API_URL unset) — text the customer by hand."
+          : sms.status === "skipped"
+            ? "Confirmation SMS: no usable phone on this booking."
+            : `Confirmation SMS ${sms.status.toUpperCase()} (${sms.detail || "no detail"}) — text the customer by hand.`,
       "",
       record.slot
         ? `Customer can move or cancel this themselves at ${site.url}/reschedule?ref=${record.id} (move until ${
@@ -268,6 +282,7 @@ export async function confirmBooking(
         calendarDetail: calendar.detail,
         notified: notify.status === "sent",
       },
+      sms: { ...sms, at: new Date().toISOString() },
     })) || record;
 
   return {

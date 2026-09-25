@@ -13,14 +13,19 @@ Next.js App Router site for [prestigecarwashsc.com](https://prestigecarwashsc.co
 
 A calendar window is **never** reserved by picking it. The order is:
 
-1. `/book` lists the windows Prestige currently has open (4 hours each) from
-   `GET /api/open-slots`.
-2. Clicking one goes to `/pay?slot=<id>` — the window is shown, nothing is held.
-3. Waiver → Square. `POST /api/checkout` writes a **pending** booking record.
-   Pending records do not affect availability.
+1. **Pick a time** — `/book` lists the windows Prestige currently has open
+   (4 hours each) from `GET /api/open-slots`.
+2. **Enter details** — `/book/details?slot=<id>` collects the caller info.
+   Name, phone, and the physical service address are required; email is
+   optional. "Continue to payment" is blocked until the required fields are
+   filled. Nothing is held on this screen either.
+3. **Pay** — `/pay?slot=<id>` carries the details over, takes the package
+   selection and the liability waiver, and hands off to Square.
+   `POST /api/checkout` writes a **pending** booking record; pending records do
+   not affect availability.
 4. Square confirms the charge → `POST /api/bookings/confirm` (from `/pay/success`)
    or the Square webhook writes the **hold**, creates the Google Calendar event
-   when credentials exist, and emails the shop.
+   when credentials exist, texts the customer a confirmation, and emails the shop.
 
 Abandoning Square, closing the tab, or a declined card leaves the window listed
 on `/book` for the next customer.
@@ -43,6 +48,41 @@ waiver and owner emails.
 **Phone/voice path:** when a `book_slot` tool is wired for the phone agent it
 must collect the same three required fields and call `validateContact` before
 creating a booking. The web flow enforces it today.
+
+### Post-payment confirmation SMS
+
+When a payment is confirmed the customer gets a text with their name, the window,
+the service address, the package and amount paid, the reschedule and cancellation
+rules, and `https://prestigecarwashsc.com`. Roughly 425 characters.
+
+The rail is a **Systems-owned endpoint**, not Twilio directly — this app never
+holds Twilio credentials and never spends Twilio balance:
+
+| Variable | Effect |
+| --- | --- |
+| `PRESTIGE_SMS_API_URL` | HTTPS endpoint Systems exposes with Twilio behind it. Unset ⇒ the hook is a stub that logs the exact payload (phone masked) and sends nothing. |
+| `PRESTIGE_SMS_API_SECRET` | Sent as `Authorization: Bearer …` to that endpoint. |
+| `PRESTIGE_SMS_FROM` | Optional sender hint passed through. **Never 864-619-4911** — that line is voice only, and the code refuses to send if it is set to that number. |
+
+Request Systems will receive:
+
+```jsonc
+POST $PRESTIGE_SMS_API_URL
+Authorization: Bearer $PRESTIGE_SMS_API_SECRET
+X-Prestige-Booking: <booking reference>
+{
+  "kind": "booking-confirmation",
+  "to": "+18645550134",        // E.164, the phone captured at booking
+  "from": "+18645550111",      // only when PRESTIGE_SMS_FROM is set
+  "body": "<message text>",
+  "bookingRef": "deb9b53674cd4109",
+  "source": "prestigecarwashsc.com"
+}
+```
+
+Any 2xx is treated as accepted; a `sid` in the reply is recorded on the booking.
+A failed or stubbed text never blocks the payment, the hold, the calendar event,
+or the owner email — the owner email says to text the customer by hand instead.
 
 ### Undo before payment
 
