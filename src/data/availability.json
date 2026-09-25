@@ -1,0 +1,23 @@
+{
+  "$comment": "Prestige-owned open-slot source, mirroring the windows Prestige publishes in the Google Appointment Schedule (240-minute appointments). The site never books through Google — finishing that form holds the slot before payment — so these windows are what /book and /api/open-slots serve. Edit this file, or set the PRESTIGE_AVAILABILITY env var to a JSON object with the same shape, when Emory opens or closes hours. Times are local wall-clock in `timeZone`, 24-hour HH:MM, and each entry is the START of one appointment window.",
+  "$confirmedWindows": "2026-09-24 (Derek): Sat 9:00-13:00, Sun 9:00-13:00, Sun 16:00-20:00 ET. Add weekday starts to `weekly` when Emory opens them.",
+  "timeZone": "America/New_York",
+  "slotMinutes": 240,
+  "leadTimeHours": 12,
+  "horizonDays": 21,
+  "rescheduleCutoffHours": 24,
+  "cancelCutoffHours": 24,
+  "lateCancelFeeCents": 2500,
+  "weekly": {
+    "sunday": ["09:00", "16:00"],
+    "monday": [],
+    "tuesday": [],
+    "wednesday": [],
+    "thursday": [],
+    "friday": [],
+    "saturday": ["09:00"]
+  },
+  "extraDates": {},
+  "blackoutDates": [],
+  "blackoutSlots": []
+}

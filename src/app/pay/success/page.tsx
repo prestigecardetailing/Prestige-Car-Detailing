@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
+import { SuccessConfirm } from "@/components/pay/success-confirm";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { site } from "@/lib/site";
@@ -17,10 +19,15 @@ export default function PaySuccessPage() {
         Payment submitted.
       </h1>
       <p className="mt-5 text-lg leading-relaxed text-silver">
-        If Square processed the charge, your package is prepaid. Keep the time
-        you booked. To reschedule, message the shop and include the original
-        window.
+        If Square processed the charge, your package is prepaid and the window you
+        picked comes off the booking board. To reschedule, message the shop and
+        include the original window.
       </p>
+
+      <Suspense fallback={null}>
+        <SuccessConfirm />
+      </Suspense>
+
       <div className="mt-8 flex flex-wrap gap-3">
         <Link
           href="/contact"

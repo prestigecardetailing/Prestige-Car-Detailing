@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,10 +14,22 @@ import {
   packages,
   resolveSelection,
 } from "@/lib/catalog";
+import {
+  type ContactDraft,
+  clearPendingBooking,
+  emptyContactDraft,
+  readContactDraft,
+  readPendingBooking,
+  rememberPendingBooking,
+  saveContactDraft,
+} from "@/lib/booking-session";
+import { ContactFields } from "@/components/booking/contact-fields";
 import { cn } from "@/lib/cn";
+import { type ContactErrors, validateContact } from "@/lib/contact";
 import { notifyOwnerFromBrowser } from "@/lib/notify-owner";
 import { createCheckout, openAmountLink, payConfigForSelection } from "@/lib/square";
 import { hostedOnNetlify, site } from "@/lib/site";
+import type { OpenSlot } from "@/lib/slots";
 import {
   WAIVER_CLOSING,
   WAIVER_DISCLAIMER,
@@ -61,17 +74,34 @@ function formatEastern(iso: string) {
  * - Hard modal: Esc / backdrop do not dismiss; Cancel Pay or complete (agree + typed name).
  * - Other fees path skips the waiver.
  * - Checkbox enabled only after scrolling the waiver body to the bottom.
+ *
+ * WO (2026-09-24): pay-first booking. A window arrives as ?slot=<id> from /book and
+ * is shown here, but nothing is reserved — the hold is written server-side only
+ * after Square confirms the payment.
  */
 export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromQuery = getPackage(searchParams.get("package") || "")?.id;
+  const slotId = (searchParams.get("slot") || "").trim();
+  const [slotLookup, setSlotLookup] = useState<{
+    id: string;
+    slot: OpenSlot | null;
+  } | null>(null);
+  const [slotTaken, setSlotTaken] = useState(false);
   const [packageId, setPackageId] = useState(
     fromQuery || initialPackage || packages[0]?.id || "interior",
   );
   const [addonIds, setAddonIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Caller info, normally carried over from the contact step (/book/details).
+  // Name, phone, and the service address are required before we hand anyone to
+  // Square; anyone who lands here directly fills them in right on this page.
+  const [draft, setDraft] = useState<ContactDraft>(emptyContactDraft);
+  const [contactErrors, setContactErrors] = useState<ContactErrors>({});
+  const [editingContact, setEditingContact] = useState(true);
 
   const [waiverOpen, setWaiverOpen] = useState(false);
   const [agreed, setAgreed] = useState(false);
@@ -92,6 +122,17 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     () => resolveSelection(packageId, addonIds),
     [packageId, addonIds],
   );
+  const lookupReady = !!slotId && slotLookup?.id === slotId;
+  const slot = lookupReady ? slotLookup.slot : null;
+  const slotState: "none" | "loading" | "open" | "taken" = !slotId
+    ? "none"
+    : slotTaken
+      ? "taken"
+      : !lookupReady
+        ? "loading"
+        : slot
+          ? "open"
+          : "taken";
   const selectionKey = `${packageId}:${addonIds.join(",")}`;
   const localConfig = useMemo(
     () => payConfigForSelection(packageId, addonIds),
@@ -106,6 +147,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const otherReady = !!(otherReason.trim() && otherCents);
   const canSubmitWaiver =
     scrolled && agreed && signerName.trim().length >= 2 && !savingWaiver;
+  const contact = validateContact(draft);
 
   async function storeWaiverPdf(name: string, at: string) {
     const controller = new AbortController();
@@ -154,6 +196,31 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     }
   }
 
+  /**
+   * Undo before payment. Nothing is held at this point, so dropping the slot from
+   * the URL is enough to put it back in front of the next customer — but if this
+   * visit already opened a Square checkout, cancel that pending record too so any
+   * stray hold is released right away.
+   */
+  function clearSlotSelection() {
+    const pending = readPendingBooking();
+    if (pending?.bookingId) {
+      void fetch("/api/bookings/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId: pending.bookingId }),
+      }).catch(() => null);
+      clearPendingBooking();
+    }
+    setSlotLookup(null);
+    setSlotTaken(false);
+    setError(null);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("slot");
+    const query = params.toString();
+    router.replace(query ? `/pay?${query}` : "/pay", { scroll: false });
+  }
+
   function openWaiverForPay() {
     setError(null);
     setScrolled(false);
@@ -169,7 +236,12 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     setError(null);
   }
 
-  async function checkoutPackage() {
+  async function checkoutPackage(waiver?: {
+    name: string;
+    agreedAt: string;
+    pdfUrl: string;
+    pdfId: string;
+  }) {
     setError(null);
     setLoading(true);
     try {
@@ -177,12 +249,33 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         const res = await fetch("/api/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ packageId, addonIds }),
+          body: JSON.stringify({
+            packageId,
+            addonIds,
+            slotId: slotState === "open" ? slot?.id : undefined,
+            name: contact.value?.name,
+            phone: contact.value?.phone,
+            address: contact.value?.address,
+            email: contact.value?.email || undefined,
+            waiver,
+          }),
         });
+        if (res.status === 409) {
+          const data = await res.json().catch(() => ({}));
+          setSlotTaken(true);
+          setError(
+            data.error ||
+              "That window was just taken. Pick another open time on the Book page.",
+          );
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
           if (data.url) {
-            router.push(data.url);
+            if (data.bookingId) {
+              rememberPendingBooking(data.bookingId, slot?.id || "");
+            }
+            window.location.assign(data.url);
             return;
           }
         }
@@ -195,11 +288,11 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         window.location.origin,
       );
       if (fallback?.url) {
-        router.push(fallback.url);
+        window.location.assign(fallback.url);
         return;
       }
       if (squareOpen) {
-        router.push(squareOpen);
+        window.location.assign(squareOpen);
         return;
       }
       setError("Square is not connected for this selection yet.");
@@ -230,6 +323,10 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         addonIds: addonIds.join(","),
         addonNames,
         total: totalLabel,
+        window: slotState === "open" && slot ? slot.label : "No window selected",
+        phone: contact.value?.phoneDisplay || "",
+        email: contact.value?.email || "",
+        location: contact.value?.address || "",
         waiverVersion: WAIVER_VERSION,
         payUrl: `${site.url}/pay`,
         pdfUrl: pdf.url,
@@ -265,6 +362,8 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
       await notifyOwnerFromBrowser({
         subject: `Prestige Car Wash waiver — ${name}`,
         name,
+        phone: contact.value?.phoneDisplay || "",
+        location: contact.value?.address || "",
         pdf: pdf.url,
         pdfId: pdf.id,
         message: [
@@ -284,8 +383,14 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
               ]),
           "",
           `Legal name (signature): ${name}`,
+          `Phone: ${contact.value?.phoneDisplay || "(not given)"}`,
+          `Service address: ${contact.value?.address || "(not given)"}`,
+          `Email: ${contact.value?.email || "(not given)"}`,
           `Signed at (ISO): ${at}`,
           `Signed at (America/New_York): ${eastern}`,
+          `Window requested: ${
+            slotState === "open" && slot ? slot.label : "No window selected"
+          } (not held until Square clears)`,
           `Package: ${selection.pkg.name}`,
           `Add-ons: ${addonNames}`,
           `Total shown: ${totalLabel}`,
@@ -300,7 +405,12 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
 
       setAgreedAt(at);
       setWaiverOpen(false);
-      await checkoutPackage();
+      await checkoutPackage({
+        name,
+        agreedAt: at,
+        pdfUrl: pdf.url,
+        pdfId: pdf.id,
+      });
     } catch (err) {
       console.warn("Waiver record failed", err);
       setError("Could not save the waiver. Please try again.");
@@ -309,14 +419,63 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     }
   }
 
+  function onContactChange(patch: Partial<ContactDraft>) {
+    setDraft((prev) => ({ ...prev, ...patch }));
+    setContactErrors((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(patch) as (keyof ContactDraft)[]) {
+        delete next[key];
+      }
+      return next;
+    });
+    setError(null);
+  }
+
+  /**
+   * Nobody continues to Square without a name, a phone number, and the address
+   * we are driving to. The contact step normally collects these; this is the
+   * backstop for anyone who lands on /pay directly.
+   */
+  function contactReadyOrBlock() {
+    setContactErrors(contact.errors);
+    if (contact.ok) {
+      saveContactDraft(draft);
+      setEditingContact(false);
+      return true;
+    }
+    const missingRequired =
+      contact.errors.name || contact.errors.phone || contact.errors.address;
+    setError(
+      missingRequired
+        ? "Add your name, phone, and service address before continuing to payment."
+        : "Check the contact details above before continuing to payment.",
+    );
+    const firstBad = contact.errors.name
+      ? "contact-name"
+      : contact.errors.phone
+        ? "contact-phone"
+        : contact.errors.address
+          ? "contact-address"
+          : "contact-email";
+    document
+      .getElementById(firstBad)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return false;
+  }
+
   function onPayClick() {
     if (!config.canChargeSelection) {
       setError("Square is not connected for this selection yet.");
       return;
     }
+    setError(null);
+    if (!contactReadyOrBlock()) return;
     if (waiverSigned) {
       void checkoutPackage();
       return;
+    }
+    if (!signerName.trim() && contact.value?.name) {
+      setSignerName(contact.value.name);
     }
     openWaiverForPay();
   }
@@ -360,6 +519,41 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     return () => controller.abort();
   }, [packageId, addonIds]);
 
+  // Details typed on the contact step (/book/details) arrive here through
+  // session storage, so the customer is not asked twice. Collapsed to a summary
+  // when they are complete; anyone who skipped the step gets the full form.
+  // Read after the first paint so the server and client markup still match.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.resolve(readContactDraft()).then((saved) => {
+      if (cancelled || !saved) return;
+      setDraft(saved);
+      setEditingContact(!validateContact(saved).ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Confirm the window from /book is still open. Looking is free — nothing is
+  // reserved here, and the same check runs again server-side at checkout.
+  useEffect(() => {
+    if (!slotId) return;
+    const controller = new AbortController();
+    fetch("/api/open-slots", { cache: "no-store", signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { slots?: OpenSlot[] } | null) => {
+        setSlotLookup({
+          id: slotId,
+          slot: data?.slots?.find((s) => s.id === slotId) || null,
+        });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setSlotLookup({ id: slotId, slot: null });
+      });
+    return () => controller.abort();
+  }, [slotId]);
+
   useEffect(() => {
     const el = waiverRef.current;
     if (el && waiverOpen && el.scrollHeight <= el.clientHeight + 8) {
@@ -381,8 +575,115 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
 
   return (
     <div className="space-y-10">
+      {slotState !== "none" ? (
+        <div
+          className={cn(
+            "rounded-xl p-5 ring-1 sm:p-6",
+            slotState === "open"
+              ? "bg-gold/8 ring-gold/50"
+              : "bg-[#121216] ring-white/10",
+          )}
+          data-testid="selected-slot"
+        >
+          <p className="text-xs tracking-[0.24em] text-gold uppercase">
+            {slotState === "open" ? "Window you picked" : "Window"}
+          </p>
+          {slotState === "loading" ? (
+            <p className="mt-2 text-sm text-silver">Checking that window…</p>
+          ) : slotState === "open" && slot ? (
+            <>
+              <p className="font-heading mt-2 text-2xl">{slot.label}</p>
+              <p className="mt-2 text-sm leading-relaxed text-silver">
+                Still open. It is <strong className="text-silver">not</strong>{" "}
+                reserved yet — we hold it the moment Square confirms your
+                payment. Leave without paying and it stays open for someone else.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Link
+                  href="/book"
+                  className={cn(
+                    buttonVariants({ variant: "outline" }),
+                    "h-10 px-4",
+                  )}
+                >
+                  Change time
+                </Link>
+                <button
+                  type="button"
+                  onClick={clearSlotSelection}
+                  className={cn(
+                    buttonVariants({ variant: "ghost" }),
+                    "h-10 px-4",
+                  )}
+                  data-testid="clear-slot"
+                >
+                  Clear selection
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="font-heading mt-2 text-2xl">
+                That window is no longer on the board.
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-silver">
+                Someone paid for it first, or it aged out. Pick another open time
+                — you can still pay for a package here and we will call to
+                schedule.
+              </p>
+              <Link
+                href="/book"
+                className={cn(
+                  buttonVariants({ variant: "outline" }),
+                  "mt-4 h-10 px-4",
+                )}
+              >
+                See open windows
+              </Link>
+            </>
+          )}
+        </div>
+      ) : null}
+
       <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-8">
+          <section data-testid="contact-section">
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <h2 className="font-heading text-xl">Your info</h2>
+              {!editingContact ? (
+                <button
+                  type="button"
+                  onClick={() => setEditingContact(true)}
+                  className="text-sm text-gold underline underline-offset-4"
+                  data-testid="edit-contact"
+                >
+                  Edit
+                </button>
+              ) : null}
+            </div>
+            {editingContact ? (
+              <div className="mt-4">
+                <ContactFields
+                  value={draft}
+                  errors={contactErrors}
+                  onChange={onContactChange}
+                />
+              </div>
+            ) : (
+              <div
+                className="mt-4 rounded-xl bg-[#121216] p-5 text-sm leading-relaxed ring-1 ring-white/10"
+                data-testid="contact-summary"
+              >
+                <p className="text-foreground">{contact.value?.name}</p>
+                <p className="mt-1 text-silver">{contact.value?.phoneDisplay}</p>
+                <p className="mt-1 text-silver">{contact.value?.address}</p>
+                {contact.value?.email ? (
+                  <p className="mt-1 text-silver">{contact.value.email}</p>
+                ) : null}
+              </div>
+            )}
+          </section>
+
           <fieldset>
             <legend className="font-heading text-xl">Package</legend>
             <div className="mt-4 grid gap-3">
@@ -481,6 +782,11 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
             <p className="mt-2 text-sm text-silver">
               Pay in full up front. No sales tax is added on this page.
             </p>
+            {slotState === "open" && slot ? (
+              <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-sm text-gold">
+                {slot.label}
+              </p>
+            ) : null}
             <ul className="mt-6 space-y-3 text-sm" data-testid="order-lines">
               {selection.lines.map((line) => (
                 <li key={line.id} className="flex justify-between gap-4">
@@ -506,6 +812,12 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
                 Browse freely. The liability waiver opens when you click Pay.
               </p>
             )}
+            {!contact.ok ? (
+              <p className="mt-2 text-xs text-silver" data-testid="contact-hint">
+                Your name, phone, and service address go in above before you can
+                continue to payment. Email is optional.
+              </p>
+            ) : null}
             <Button
               type="button"
               size="lg"
