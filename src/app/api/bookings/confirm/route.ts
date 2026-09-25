@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { BookingRecord } from "@/lib/booking-store";
 import { getBooking } from "@/lib/booking-store";
 import {
+  cancellationQuote,
   confirmBooking,
   flagBookingForReview,
   reschedulePolicy,
@@ -32,6 +33,7 @@ function heldReply(record: BookingRecord | undefined, conflict: boolean) {
     slot: record?.slot || null,
     reference: record?.id,
     reschedule: record ? reschedulePolicy(record) : null,
+    cancellation: record ? cancellationQuote(record) : null,
     conflict,
   });
 }

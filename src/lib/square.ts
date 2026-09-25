@@ -78,6 +78,11 @@ export function payConfigForSelection(
 
 export function squareApiBase(env: EnvLike = process.env) {
   const e = squareEnv(env);
+  // Escape hatch for local end-to-end runs against a stub Square. Never set in production.
+  const override = e.SQUARE_API_BASE_URL;
+  if (override && /^https?:\/\//i.test(override)) {
+    return override.replace(/\/$/, "");
+  }
   const isProd = (e.SQUARE_ENVIRONMENT || "").toLowerCase() === "production";
   return isProd
     ? "https://connect.squareup.com"
@@ -211,6 +216,80 @@ async function squareGet(pathname: string, env: EnvLike) {
     return null;
   }
   return res.json();
+}
+
+export type RefundResult = {
+  status: "issued" | "failed" | "skipped" | "not-needed";
+  refundId?: string;
+  amountCents: number;
+  detail?: string;
+};
+
+/**
+ * Refund part or all of a Square payment (Refunds API).
+ *
+ * Needs the same SQUARE_ACCESS_TOKEN the checkout already uses plus the payment
+ * id we recorded at confirmation time. When either is missing — the open-amount
+ * `square.link` fallback never gives us a payment id — this returns `skipped`
+ * and the caller tells the owner exactly what to refund by hand in Square.
+ */
+export async function refundSquarePayment(
+  paymentId: string | undefined,
+  amountCents: number,
+  reason: string,
+  env: EnvLike = process.env,
+): Promise<RefundResult> {
+  if (amountCents <= 0) {
+    return { status: "not-needed", amountCents, detail: "Nothing to refund" };
+  }
+  if (!hasSquareApi(env)) {
+    return {
+      status: "skipped",
+      amountCents,
+      detail: "Square API not configured on this deploy",
+    };
+  }
+  if (!paymentId) {
+    return {
+      status: "skipped",
+      amountCents,
+      detail: "No Square payment id on this booking",
+    };
+  }
+
+  try {
+    const res = await fetch(`${squareApiBase(env)}/v2/refunds`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${squareEnv(env).SQUARE_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Square-Version": SQUARE_VERSION,
+      },
+      body: JSON.stringify({
+        idempotency_key: crypto.randomUUID(),
+        payment_id: paymentId,
+        amount_money: { amount: amountCents, currency: "USD" },
+        reason: reason.slice(0, 192),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail =
+        data?.errors?.[0]?.detail || data?.errors?.[0]?.code || `HTTP ${res.status}`;
+      console.error("Square refund failed", detail);
+      return { status: "failed", amountCents, detail: String(detail) };
+    }
+    const refund = data.refund || {};
+    return {
+      status: "issued",
+      refundId: refund.id,
+      amountCents,
+      detail: `refund ${String(refund.status || "PENDING")}`,
+    };
+  } catch (err) {
+    console.error("Square refund threw", err);
+    return { status: "failed", amountCents, detail: "exception" };
+  }
 }
 
 /** Our booking id rides on the order as `reference_id` (and in `metadata`). */

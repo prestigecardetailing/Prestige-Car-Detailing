@@ -45,9 +45,39 @@ email) is the key: `/reschedule?ref=<reference>` looks the booking up, shows the
 deadline, and lists the open windows. Moving holds the new window, releases the
 old one, patches the Google Calendar event when one exists, and emails the shop.
 
-- `GET /api/bookings/lookup?ref=…` — booking summary plus the reschedule policy
+- `GET /api/bookings/lookup?ref=…` — booking summary plus the reschedule policy and cancellation quote
 - `POST /api/bookings/reschedule` `{ ref, slotId }` — 409 `code: "too-late"` inside the cutoff
-- `POST /api/bookings/cancel` `{ bookingId }` — undo an unpaid selection
+- `POST /api/bookings/cancel` `{ ref }` — undo an unpaid selection, or quote/execute a paid cancellation
+
+### Cancellation policy (Derek, 2026-09-24)
+
+- **24 or more hours before the window starts:** full refund of everything paid.
+- **Inside 24 hours:** a **$25** late-cancellation fee is retained and everything
+  else is refunded.
+- **After the window has started:** not a self-service cancellation — the page
+  tells the customer to call 864-619-4911.
+
+Both numbers are `cancelCutoffHours` and `lateCancelFeeCents` in
+`src/data/availability.json`. The policy is stated on `/pay/success`, on
+`/cancel` and `/reschedule`, in the site footer, and in the shop's paid-booking
+and cancellation emails.
+
+`POST /api/bookings/cancel` is deliberately two-step for paid bookings:
+
+```
+POST /api/bookings/cancel { "ref": "…" }
+  → { "status": "quote", "quote": { policy, paidLabel, feeLabel, refundLabel, … } }
+POST /api/bookings/cancel { "ref": "…", "confirm": true }
+  → { "status": "cancelled", "booking": { … , "cancelled": { refundStatus, refundId, … } } }
+```
+
+Confirming refunds through the Square Refunds API (`POST /v2/refunds`) using the
+same `SQUARE_ACCESS_TOKEN` the checkout uses plus the payment id recorded at
+confirmation, releases the window back to `/book`, deletes the Google Calendar
+event, and emails the shop. If Square cannot be called — no API token, or the
+open-amount link that never gives us a payment id — the booking is still
+cancelled and released, `refundStatus` is `skipped`, and the shop's email leads
+with `ACTION REQUIRED — refund $X to this customer in Square by hand`.
 
 The public Google Appointment Schedule iframe was removed on purpose: finishing a
 Google booking holds the slot immediately, before payment. `BOOKING_CALENDAR_URL`
@@ -65,6 +95,8 @@ Edit `src/data/availability.json` and deploy:
 - `horizonDays` — how far out the list runs
 - `rescheduleCutoffHours` — self-service reschedule closes this long before the
   window starts (24)
+- `cancelCutoffHours` — full-refund boundary for cancellations (24)
+- `lateCancelFeeCents` — retained on a late cancellation (2500 = $25)
 
 To change hours without a deploy, set the `PRESTIGE_AVAILABILITY` env var to a
 JSON object with the same keys; it is merged over the file.
@@ -115,6 +147,7 @@ upgrades a fallback.
 | `PRESTIGE_ADMIN_TOKEN` | Lets the shop confirm a hold by hand: `POST /api/bookings/confirm` with `{ "bookingId": "…", "adminToken": "…" }`. Used when a payment could not be verified automatically. |
 | `PRESTIGE_AVAILABILITY` | JSON override for `src/data/availability.json`. |
 | `PRESTIGE_NOTIFY_DISABLED` | `1` on preview/local runs so test payments do not email the shop. |
+| `SQUARE_API_BASE_URL` | Test-only override for the Square API host, so a local stub can stand in for Square. Never set this in production. |
 | `NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY` / `WEB3FORMS_ACCESS_KEY` | Preferred owner-notification channel; FormSubmit is the fallback. |
 
 When the Google vars are absent the hold still happens on the site and the shop

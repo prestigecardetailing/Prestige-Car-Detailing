@@ -14,10 +14,12 @@ import {
 import type { CalendarResult } from "@/lib/google-calendar";
 import {
   createCalendarHold,
+  deleteCalendarHold,
   googleCalendarConfigured,
   updateCalendarHold,
 } from "@/lib/google-calendar";
 import { notifyOwnerFromServer } from "@/lib/notify-owner";
+import { refundSquarePayment } from "@/lib/square";
 import { site } from "@/lib/site";
 import {
   availabilityConfig,
@@ -240,9 +242,16 @@ export async function confirmBooking(
         : "WARNING: another paid booking already holds this window. Call the customer.",
       "",
       record.slot
-        ? `Customer can move this themselves until ${
+        ? `Customer can move or cancel this themselves at ${site.url}/reschedule?ref=${record.id} (move until ${
             reschedulePolicy(record).deadlineLabel
-          } at ${site.url}/reschedule?ref=${record.id}`
+          }).`
+        : "",
+      record.slot
+        ? `Cancellation policy: full refund ${
+            cancellationQuote(record).cutoffHours
+          }+ hours out; inside that we keep ${formatMoney(
+            availabilityConfig().lateCancelFeeCents,
+          )} and refund the rest.`
         : "",
       `Slot list: ${site.url}/api/open-slots`,
     ]
@@ -335,6 +344,87 @@ export function reschedulePolicy(
   return { ...base, allowed: true };
 }
 
+export type CancellationQuote = {
+  /** Can the customer cancel themselves right now? */
+  allowed: boolean;
+  /** "full-refund" outside the cutoff, "late-fee" inside it. */
+  policy: "full-refund" | "late-fee";
+  cutoffHours: number;
+  hoursBeforeStart: number;
+  paidCents: number;
+  paidLabel: string;
+  /** The policy fee, whether or not it applies to this cancellation right now. */
+  lateFeeCents: number;
+  lateFeeLabel: string;
+  /** What would actually be retained if the customer cancelled at this moment. */
+  feeCents: number;
+  feeLabel: string;
+  refundCents: number;
+  refundLabel: string;
+  /** Last moment a cancellation is still a full refund. */
+  fullRefundUntil: string | null;
+  fullRefundUntilLabel: string | null;
+  reason?: "not-paid" | "no-slot" | "started" | "already-cancelled";
+};
+
+/**
+ * Prestige cancellation policy (2026-09-24):
+ * - 24+ hours before the window starts → full refund.
+ * - inside 24 hours → keep a $25 late-cancellation fee, refund the rest.
+ * Both numbers live in src/data/availability.json (`cancelCutoffHours`,
+ * `lateCancelFeeCents`). After the window has started it stops being a
+ * self-service cancellation and becomes a phone call.
+ */
+export function cancellationQuote(
+  record: BookingRecord,
+  now: Date = new Date(),
+  env: Record<string, string | undefined> = process.env,
+): CancellationQuote {
+  const config = availabilityConfig(env);
+  const cutoffHours = config.cancelCutoffHours;
+  const paidCents = record.totalCents;
+  const startMs = record.slot ? Date.parse(record.slot.start) : NaN;
+  const hoursBeforeStart = Number.isNaN(startMs)
+    ? 0
+    : Math.round(((startMs - now.getTime()) / 3_600_000) * 10) / 10;
+  const late = !Number.isNaN(startMs) && hoursBeforeStart < cutoffHours;
+  const feeCents = late ? Math.min(config.lateCancelFeeCents, paidCents) : 0;
+  const refundCents = Math.max(0, paidCents - feeCents);
+  const fullRefundUntil = Number.isNaN(startMs)
+    ? null
+    : new Date(startMs - cutoffHours * 3_600_000).toISOString();
+
+  const base = {
+    policy: (late ? "late-fee" : "full-refund") as "full-refund" | "late-fee",
+    cutoffHours,
+    hoursBeforeStart,
+    paidCents,
+    paidLabel: formatMoney(paidCents),
+    lateFeeCents: config.lateCancelFeeCents,
+    lateFeeLabel: formatMoney(config.lateCancelFeeCents),
+    feeCents,
+    feeLabel: formatMoney(feeCents),
+    refundCents,
+    refundLabel: formatMoney(refundCents),
+    fullRefundUntil,
+    fullRefundUntilLabel: fullRefundUntil
+      ? formatMoment(fullRefundUntil, config.timeZone)
+      : null,
+  };
+
+  if (record.status === "cancelled") {
+    return { ...base, allowed: false, reason: "already-cancelled" };
+  }
+  if (record.status !== "paid") {
+    return { ...base, allowed: false, reason: "not-paid" };
+  }
+  if (!record.slot) return { ...base, allowed: false, reason: "no-slot" };
+  if (startMs <= now.getTime()) {
+    return { ...base, allowed: false, reason: "started" };
+  }
+  return { ...base, allowed: true };
+}
+
 export type PublicBooking = {
   reference: string;
   status: BookingRecord["status"];
@@ -343,6 +433,9 @@ export type PublicBooking = {
   addonNames: string[];
   totalLabel: string;
   reschedule: ReschedulePolicy;
+  cancellation: CancellationQuote;
+  /** Present once the booking has actually been cancelled. */
+  cancelled?: BookingRecord["cancellation"];
 };
 
 /** Everything the customer is allowed to see about their own booking. */
@@ -358,7 +451,117 @@ export function publicBooking(
     addonNames: record.addonNames,
     totalLabel: formatMoney(record.totalCents),
     reschedule: reschedulePolicy(record, now),
+    cancellation: cancellationQuote(record, now),
+    cancelled: record.cancellation,
   };
+}
+
+/**
+ * Cancel a paid booking: refund per policy, put the window back on the board,
+ * pull the Google Calendar event, and tell the shop which refund was executed.
+ */
+export async function cancelPaidBooking(
+  bookingId: string,
+  now: Date = new Date(),
+): Promise<BookingRecord> {
+  const record = await getBooking(bookingId);
+  if (!record) throw new BookingError("not-found", "We could not find that booking.");
+  if (record.status === "cancelled") return record;
+
+  const quote = cancellationQuote(record, now);
+  if (!quote.allowed) {
+    if (quote.reason === "not-paid") {
+      throw new BookingError(
+        "not-paid",
+        "That booking is not paid, so there is nothing to refund.",
+      );
+    }
+    if (quote.reason === "no-slot") {
+      throw new BookingError(
+        "no-slot",
+        `That payment has no scheduled window. Call ${site.phone} and we will sort the refund out.`,
+      );
+    }
+    throw new BookingError(
+      "too-late",
+      `That window has already started, so it cannot be cancelled online. Call ${site.phone}.`,
+    );
+  }
+
+  const refund = await refundSquarePayment(
+    record.square.paymentId,
+    quote.refundCents,
+    quote.policy === "late-fee"
+      ? `Prestige cancellation inside ${quote.cutoffHours}h — ${quote.feeLabel} late fee retained`
+      : "Prestige cancellation — full refund",
+  );
+
+  let slotReleased = false;
+  if (record.slot) {
+    const hold = await getHold(record.slot.id);
+    if (hold?.bookingId === record.id) {
+      await releaseSlot(record.slot.id);
+      slotReleased = true;
+    }
+  }
+
+  const calendar: CalendarResult = record.hold?.calendarEventId
+    ? await deleteCalendarHold(record.hold.calendarEventId)
+    : { status: "skipped", detail: "No calendar event on this booking" };
+
+  const cancelled =
+    (await updateBooking(bookingId, {
+      status: "cancelled",
+      cancellation: {
+        cancelledAt: new Date(now).toISOString(),
+        hoursBeforeStart: quote.hoursBeforeStart,
+        policy: quote.policy,
+        feeCents: quote.feeCents,
+        refundCents: quote.refundCents,
+        refundStatus: refund.status,
+        refundId: refund.refundId,
+        refundDetail: refund.detail,
+        slotReleased,
+      },
+    })) || record;
+
+  const refundLine =
+    refund.status === "issued"
+      ? `Square refund issued: ${quote.refundLabel} (refund id ${refund.refundId}).`
+      : refund.status === "not-needed"
+        ? `No refund due — the ${quote.feeLabel} fee covers the full amount paid.`
+        : `ACTION REQUIRED — refund ${quote.refundLabel} to this customer in Square by hand (${refund.detail}).`;
+
+  await notifyOwnerFromServer({
+    subject: `Prestige CANCELLED (${
+      quote.policy === "late-fee" ? `late, keep ${quote.feeLabel}` : "full refund"
+    }) — ${record.slot?.label || record.packageName}`,
+    name: record.customer.name || "Prestige customer",
+    phone: record.customer.phone,
+    message: [
+      quote.policy === "late-fee"
+        ? `LATE CANCELLATION — inside ${quote.cutoffHours} hours (${quote.hoursBeforeStart}h before the window).`
+        : `CANCELLED with ${quote.hoursBeforeStart}h notice — full refund per policy.`,
+      "",
+      `Paid: ${quote.paidLabel}`,
+      `Late-cancellation fee retained: ${quote.feeLabel}`,
+      `Refund owed to customer: ${quote.refundLabel}`,
+      refundLine,
+      "",
+      bookingSummary(record),
+      "",
+      slotReleased
+        ? "The window is back on the booking board."
+        : "No hold was attached to this booking.",
+      calendar.status === "deleted"
+        ? "Google Calendar: event removed."
+        : googleCalendarConfigured() && record.hold?.calendarEventId
+          ? `Google Calendar: FAILED to remove (${calendar.detail}). Delete the event by hand.`
+          : "Google Calendar: nothing to remove on this deploy — clear the window by hand if you blocked it.",
+    ].join("\n"),
+  }).catch(() => null);
+
+  return cancelled;
 }
 
 /**

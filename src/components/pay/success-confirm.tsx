@@ -15,6 +15,10 @@ type ConfirmReply = {
     cutoffHours: number;
     deadlineLabel: string | null;
   } | null;
+  cancellation?: {
+    cutoffHours: number;
+    lateFeeLabel: string;
+  } | null;
 };
 
 /**
@@ -126,6 +130,22 @@ export function SuccessConfirm() {
               ? ` until ${reply.reschedule.deadlineLabel} (${reply.reschedule.cutoffHours} hours before the window).`
               : "."}{" "}
             After that, call {site.phone}.
+          </p>
+        ) : null}
+        {reply.reference && reply.cancellation ? (
+          <p className="mt-3">
+            Need to cancel? Cancel {reply.cancellation.cutoffHours} or more hours
+            before your window for a full refund. Inside{" "}
+            {reply.cancellation.cutoffHours} hours we keep a{" "}
+            {reply.cancellation.lateFeeLabel} late-cancellation fee and refund
+            everything else.{" "}
+            <Link
+              href={`/cancel?ref=${encodeURIComponent(reply.reference)}`}
+              className="text-gold underline underline-offset-4"
+            >
+              Cancel this booking
+            </Link>
+            .
           </p>
         ) : null}
         {reply.conflict ? (

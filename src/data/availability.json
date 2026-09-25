@@ -5,6 +5,8 @@
   "leadTimeHours": 12,
   "horizonDays": 21,
   "rescheduleCutoffHours": 24,
+  "cancelCutoffHours": 24,
+  "lateCancelFeeCents": 2500,
   "weekly": {
     "sunday": [],
     "monday": ["08:00", "13:00"],

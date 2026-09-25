@@ -18,6 +18,10 @@ export type AvailabilityConfig = {
   horizonDays: number;
   /** A paid customer can move their own booking until this many hours before it starts. */
   rescheduleCutoffHours: number;
+  /** Cancel this far ahead and the refund is full; inside it, the late fee applies. */
+  cancelCutoffHours: number;
+  /** Retained on a late cancellation. Everything above it is refunded. */
+  lateCancelFeeCents: number;
   /** Recurring weekly openings: weekday name -> list of local start times ("08:00"). */
   weekly: Record<string, string[]>;
   /** One-off openings: "YYYY-MM-DD" -> list of local start times. */
@@ -61,6 +65,8 @@ const fallback: AvailabilityConfig = {
   leadTimeHours: 12,
   horizonDays: 21,
   rescheduleCutoffHours: 24,
+  cancelCutoffHours: 24,
+  lateCancelFeeCents: 2500,
   weekly: {},
   extraDates: {},
   blackoutDates: [],
@@ -109,6 +115,18 @@ function normalizeConfig(raw: Record<string, unknown>): AvailabilityConfig {
       fallback.rescheduleCutoffHours,
       0,
       24 * 14,
+    ),
+    cancelCutoffHours: num(
+      raw.cancelCutoffHours,
+      fallback.cancelCutoffHours,
+      0,
+      24 * 14,
+    ),
+    lateCancelFeeCents: num(
+      raw.lateCancelFeeCents,
+      fallback.lateCancelFeeCents,
+      0,
+      100_000,
     ),
     weekly,
     extraDates,

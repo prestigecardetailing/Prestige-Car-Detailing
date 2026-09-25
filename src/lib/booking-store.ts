@@ -66,7 +66,7 @@ export type BookingRecord = {
   hold: {
     heldAt: string;
     calendarEventId?: string;
-    calendarStatus: "created" | "skipped" | "failed";
+    calendarStatus: "created" | "deleted" | "skipped" | "failed";
     calendarDetail?: string;
     notified: boolean;
   } | null;
@@ -74,6 +74,18 @@ export type BookingRecord = {
   reviewNotifiedAt?: string;
   /** Windows this booking used to sit on, oldest first, after self-service moves. */
   previousSlots?: BookingSlot[];
+  /** Written when a paid booking is cancelled, including how the refund was handled. */
+  cancellation?: {
+    cancelledAt: string;
+    hoursBeforeStart: number;
+    policy: "full-refund" | "late-fee";
+    feeCents: number;
+    refundCents: number;
+    refundStatus: "issued" | "failed" | "skipped" | "not-needed";
+    refundId?: string;
+    refundDetail?: string;
+    slotReleased: boolean;
+  };
 };
 
 export type SlotHold = {
