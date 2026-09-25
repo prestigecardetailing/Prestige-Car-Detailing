@@ -55,16 +55,27 @@ When a payment is confirmed the customer gets a text with their name, the window
 the service address, the package and amount paid, the reschedule and cancellation
 rules, and `https://prestigecarwashsc.com`. Roughly 425 characters.
 
-The rail is a **Systems-owned endpoint**, not Twilio directly — this app never
-holds Twilio credentials and never spends Twilio balance:
+Square's own receipt SMS is **not** a substitute: it cannot carry the window, the
+service address, or the cancellation terms this message is required to state.
 
-| Variable | Effect |
+There are two rails, chosen in this order, and a safe no-op when neither is set.
+
+**1. Twilio direct** (what Systems is provisioning). Posts to
+`/2010-04-01/Accounts/{sid}/Messages.json` when all of these exist:
+
+| Variable | Notes |
 | --- | --- |
-| `PRESTIGE_SMS_API_URL` | HTTPS endpoint Systems exposes with Twilio behind it. Unset ⇒ the hook is a stub that logs the exact payload (phone masked) and sends nothing. |
-| `PRESTIGE_SMS_API_SECRET` | Sent as `Authorization: Bearer …` to that endpoint. |
-| `PRESTIGE_SMS_FROM` | Optional sender hint passed through. **Never 864-619-4911** — that line is voice only, and the code refuses to send if it is set to that number. |
+| `TWILIO_ACCOUNT_SID` | Account the message is billed to. |
+| `TWILIO_AUTH_TOKEN` | Or `TWILIO_API_KEY_SID` + `TWILIO_API_KEY_SECRET`, which win when both are present. |
+| `TWILIO_FROM_NUMBER` | Or `TWILIO_MESSAGING_SERVICE_SID`. **Never 864-619-4911** — that line is voice only and the code refuses to send when it is the configured sender. |
+| `TWILIO_API_BASE_URL` | Test-only host override so the request shape can be proven without spending. Never set in production. |
 
-Request Systems will receive:
+As of 2026-09-25 this path is dormant: Systems reports `IncomingPhoneNumbers=0`,
+and the number cannot be bought until Trust Hub Primary compliance KYC clears.
+
+**2. Systems-owned proxy**, if Prestige would rather keep Twilio credentials off
+the site entirely. Set `PRESTIGE_SMS_API_URL` (plus `PRESTIGE_SMS_API_SECRET`, and
+optionally `PRESTIGE_SMS_FROM`) and it takes precedence over the direct path:
 
 ```jsonc
 POST $PRESTIGE_SMS_API_URL
@@ -80,9 +91,15 @@ X-Prestige-Booking: <booking reference>
 }
 ```
 
-Any 2xx is treated as accepted; a `sid` in the reply is recorded on the booking.
-A failed or stubbed text never blocks the payment, the hold, the calendar event,
-or the owner email — the owner email says to text the customer by hand instead.
+**3. Neither configured:** the hook builds the payload, logs it with the phone
+masked, records it on the booking, and sends nothing. It never throws.
+
+Any 2xx is treated as accepted and the message `sid` is recorded on the booking. A
+failed, blocked, or skipped text never blocks the payment, the hold, the calendar
+event, or the owner email — the owner email then says to text by hand.
+
+`GET /api/sms-status` reports which rail a deploy would use and which variables
+are present (never their values), so the wiring can be checked without sending.
 
 ### Undo before payment
 
