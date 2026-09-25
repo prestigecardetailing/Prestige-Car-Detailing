@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { updateBooking } from "@/lib/booking-store";
 import { BookingError, createPendingBooking } from "@/lib/bookings";
 import { CatalogError } from "@/lib/catalog";
+import { validateContact } from "@/lib/contact";
 import { createCheckout } from "@/lib/square";
 import { site } from "@/lib/site";
 
@@ -21,6 +22,24 @@ export async function POST(request: NextRequest) {
     if (!packageId) {
       return NextResponse.json({ error: "packageId required" }, { status: 400 });
     }
+    // Caller info is required before any booking is confirmed, and the form is
+    // not the only way in — enforce it here too.
+    const contact = validateContact({
+      name: body.name,
+      phone: body.phone,
+      email: body.email,
+    });
+    if (!contact.ok) {
+      return NextResponse.json(
+        {
+          error: "Name and phone are required before payment.",
+          code: "contact-required",
+          fields: contact.errors,
+        },
+        { status: 400 },
+      );
+    }
+
     const origin =
       request.headers.get("origin") ||
       request.nextUrl.origin ||
@@ -35,9 +54,9 @@ export async function POST(request: NextRequest) {
       slotId,
       source: "square-api",
       customer: {
-        name: str(body.name, 80),
-        phone: str(body.phone, 40),
-        email: str(body.email, 120),
+        name: contact.value.name,
+        phone: contact.value.phoneDisplay,
+        email: contact.value.email || undefined,
         vehicle: str(body.vehicle),
         location: str(body.location, 240),
       },
@@ -60,6 +79,11 @@ export async function POST(request: NextRequest) {
             start: booking.slot.start,
           }
         : null,
+      buyer: {
+        name: contact.value.name,
+        phone: contact.value.phone,
+        email: contact.value.email || undefined,
+      },
     });
 
     // On the open-amount fallback link Square cannot carry our ids back, so the

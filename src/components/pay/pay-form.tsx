@@ -20,6 +20,11 @@ import {
   rememberPendingBooking,
 } from "@/lib/booking-session";
 import { cn } from "@/lib/cn";
+import {
+  CONTACT_REQUIRED_NOTE,
+  type ContactErrors,
+  validateContact,
+} from "@/lib/contact";
 import { notifyOwnerFromBrowser } from "@/lib/notify-owner";
 import { createCheckout, openAmountLink, payConfigForSelection } from "@/lib/square";
 import { hostedOnNetlify, site } from "@/lib/site";
@@ -90,6 +95,12 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Caller info. Name and phone are required before we hand anyone to Square.
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactErrors, setContactErrors] = useState<ContactErrors>({});
+
   const [waiverOpen, setWaiverOpen] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [signerName, setSignerName] = useState("");
@@ -134,6 +145,11 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const otherReady = !!(otherReason.trim() && otherCents);
   const canSubmitWaiver =
     scrolled && agreed && signerName.trim().length >= 2 && !savingWaiver;
+  const contact = validateContact({
+    name: contactName,
+    phone: contactPhone,
+    email: contactEmail,
+  });
 
   async function storeWaiverPdf(name: string, at: string) {
     const controller = new AbortController();
@@ -239,7 +255,9 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
             packageId,
             addonIds,
             slotId: slotState === "open" ? slot?.id : undefined,
-            name: waiver?.name || signerName.trim() || undefined,
+            name: contact.value?.name,
+            phone: contact.value?.phone,
+            email: contact.value?.email || undefined,
             waiver,
           }),
         });
@@ -307,6 +325,8 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         addonNames,
         total: totalLabel,
         window: slotState === "open" && slot ? slot.label : "No window selected",
+        phone: contact.value?.phoneDisplay || "",
+        email: contact.value?.email || "",
         waiverVersion: WAIVER_VERSION,
         payUrl: `${site.url}/pay`,
         pdfUrl: pdf.url,
@@ -342,6 +362,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
       await notifyOwnerFromBrowser({
         subject: `Prestige Car Wash waiver — ${name}`,
         name,
+        phone: contact.value?.phoneDisplay || "",
         pdf: pdf.url,
         pdfId: pdf.id,
         message: [
@@ -361,6 +382,8 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
               ]),
           "",
           `Legal name (signature): ${name}`,
+          `Phone: ${contact.value?.phoneDisplay || "(not given)"}`,
+          `Email: ${contact.value?.email || "(not given)"}`,
           `Signed at (ISO): ${at}`,
           `Signed at (America/New_York): ${eastern}`,
           `Window requested: ${
@@ -394,14 +417,34 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     }
   }
 
+  /** Nobody continues to Square without a name and a phone number. */
+  function contactReadyOrBlock() {
+    setContactErrors(contact.errors);
+    if (contact.ok) return true;
+    setError(
+      contact.errors.name || contact.errors.phone
+        ? "Add your name and phone number before continuing to payment."
+        : "Check the contact details above before continuing to payment.",
+    );
+    document
+      .getElementById("contact-name")
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return false;
+  }
+
   function onPayClick() {
     if (!config.canChargeSelection) {
       setError("Square is not connected for this selection yet.");
       return;
     }
+    setError(null);
+    if (!contactReadyOrBlock()) return;
     if (waiverSigned) {
       void checkoutPackage();
       return;
+    }
+    if (!signerName.trim() && contact.value?.name) {
+      setSignerName(contact.value.name);
     }
     openWaiverForPay();
   }
@@ -557,6 +600,89 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
 
       <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-8">
+          <fieldset data-testid="contact-fields">
+            <legend className="font-heading text-xl">Your info</legend>
+            <p className="mt-2 text-sm text-silver">{CONTACT_REQUIRED_NOTE}</p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="contact-name">
+                  Full name <span className="text-gold">(required)</span>
+                </Label>
+                <Input
+                  id="contact-name"
+                  name="name"
+                  value={contactName}
+                  onChange={(e) => {
+                    setContactName(e.target.value);
+                    setContactErrors((prev) => ({ ...prev, name: undefined }));
+                  }}
+                  autoComplete="name"
+                  maxLength={80}
+                  aria-required="true"
+                  aria-invalid={!!contactErrors.name}
+                  className="h-11"
+                />
+                {contactErrors.name ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {contactErrors.name}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contact-phone">
+                  Phone <span className="text-gold">(required)</span>
+                </Label>
+                <Input
+                  id="contact-phone"
+                  name="phone"
+                  type="tel"
+                  inputMode="tel"
+                  value={contactPhone}
+                  onChange={(e) => {
+                    setContactPhone(e.target.value);
+                    setContactErrors((prev) => ({ ...prev, phone: undefined }));
+                  }}
+                  autoComplete="tel"
+                  placeholder="864-555-0134"
+                  maxLength={24}
+                  aria-required="true"
+                  aria-invalid={!!contactErrors.phone}
+                  className="h-11"
+                />
+                {contactErrors.phone ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {contactErrors.phone}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="contact-email">
+                  Email <span className="text-silver/70">(optional)</span>
+                </Label>
+                <Input
+                  id="contact-email"
+                  name="email"
+                  type="email"
+                  value={contactEmail}
+                  onChange={(e) => {
+                    setContactEmail(e.target.value);
+                    setContactErrors((prev) => ({ ...prev, email: undefined }));
+                  }}
+                  autoComplete="email"
+                  placeholder="Leave blank if you would rather not"
+                  maxLength={120}
+                  aria-invalid={!!contactErrors.email}
+                  className="h-11"
+                />
+                {contactErrors.email ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {contactErrors.email}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </fieldset>
+
           <fieldset>
             <legend className="font-heading text-xl">Package</legend>
             <div className="mt-4 grid gap-3">
@@ -685,6 +811,12 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
                 Browse freely. The liability waiver opens when you click Pay.
               </p>
             )}
+            {!contact.ok ? (
+              <p className="mt-2 text-xs text-silver" data-testid="contact-hint">
+                Your name and phone go in above before you can continue to
+                payment. Email is optional.
+              </p>
+            ) : null}
             <Button
               type="button"
               size="lg"

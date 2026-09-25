@@ -96,6 +96,8 @@ export type CheckoutContext = {
   bookingId?: string;
   /** Slot the customer picked, for the Square order metadata and the redirect. */
   slot?: { id: string; label: string; start: string } | null;
+  /** Caller info captured before checkout; pre-fills the Square screen. */
+  buyer?: { name?: string; phone?: string; email?: string } | null;
 };
 
 async function createSquarePaymentLink(
@@ -153,9 +155,23 @@ async function createSquarePaymentLink(
         enable_loyalty: false,
         redirect_url: redirect.toString(),
       },
-      payment_note: context.slot
-        ? `Prestige Car Wash — ${selection.pkg.name} — ${context.slot.label}`
-        : `Prestige Car Wash — ${selection.pkg.name}`,
+      ...(context.buyer?.email || context.buyer?.phone
+        ? {
+            pre_populated_data: {
+              ...(context.buyer.email ? { buyer_email: context.buyer.email } : {}),
+              ...(context.buyer.phone
+                ? { buyer_phone_number: context.buyer.phone }
+                : {}),
+            },
+          }
+        : {}),
+      payment_note: context.buyer?.name
+        ? `Prestige Car Wash — ${selection.pkg.name}${
+            context.slot ? ` — ${context.slot.label}` : ""
+          } — ${context.buyer.name}`
+        : `Prestige Car Wash — ${selection.pkg.name}${
+            context.slot ? ` — ${context.slot.label}` : ""
+          }`,
     }),
   });
 
