@@ -615,6 +615,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
                   onChange={(e) => {
                     setContactName(e.target.value);
                     setContactErrors((prev) => ({ ...prev, name: undefined }));
+                    setError(null);
                   }}
                   autoComplete="name"
                   maxLength={80}
@@ -641,6 +642,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
                   onChange={(e) => {
                     setContactPhone(e.target.value);
                     setContactErrors((prev) => ({ ...prev, phone: undefined }));
+                    setError(null);
                   }}
                   autoComplete="tel"
                   placeholder="864-555-0134"
@@ -667,6 +669,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
                   onChange={(e) => {
                     setContactEmail(e.target.value);
                     setContactErrors((prev) => ({ ...prev, email: undefined }));
+                    setError(null);
                   }}
                   autoComplete="email"
                   placeholder="Leave blank if you would rather not"
