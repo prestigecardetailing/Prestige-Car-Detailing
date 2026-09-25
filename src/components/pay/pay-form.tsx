@@ -15,16 +15,17 @@ import {
   resolveSelection,
 } from "@/lib/catalog";
 import {
+  type ContactDraft,
   clearPendingBooking,
+  emptyContactDraft,
+  readContactDraft,
   readPendingBooking,
   rememberPendingBooking,
+  saveContactDraft,
 } from "@/lib/booking-session";
+import { ContactFields } from "@/components/booking/contact-fields";
 import { cn } from "@/lib/cn";
-import {
-  CONTACT_REQUIRED_NOTE,
-  type ContactErrors,
-  validateContact,
-} from "@/lib/contact";
+import { type ContactErrors, validateContact } from "@/lib/contact";
 import { notifyOwnerFromBrowser } from "@/lib/notify-owner";
 import { createCheckout, openAmountLink, payConfigForSelection } from "@/lib/square";
 import { hostedOnNetlify, site } from "@/lib/site";
@@ -95,12 +96,12 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Caller info. Name and phone are required before we hand anyone to Square.
-  const [contactName, setContactName] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
-  const [contactAddress, setContactAddress] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
+  // Caller info, normally carried over from the contact step (/book/details).
+  // Name, phone, and the service address are required before we hand anyone to
+  // Square; anyone who lands here directly fills them in right on this page.
+  const [draft, setDraft] = useState<ContactDraft>(emptyContactDraft);
   const [contactErrors, setContactErrors] = useState<ContactErrors>({});
+  const [editingContact, setEditingContact] = useState(true);
 
   const [waiverOpen, setWaiverOpen] = useState(false);
   const [agreed, setAgreed] = useState(false);
@@ -146,12 +147,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const otherReady = !!(otherReason.trim() && otherCents);
   const canSubmitWaiver =
     scrolled && agreed && signerName.trim().length >= 2 && !savingWaiver;
-  const contact = validateContact({
-    name: contactName,
-    phone: contactPhone,
-    address: contactAddress,
-    email: contactEmail,
-  });
+  const contact = validateContact(draft);
 
   async function storeWaiverPdf(name: string, at: string) {
     const controller = new AbortController();
@@ -423,10 +419,30 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     }
   }
 
-  /** Nobody continues to Square without a name and a phone number. */
+  function onContactChange(patch: Partial<ContactDraft>) {
+    setDraft((prev) => ({ ...prev, ...patch }));
+    setContactErrors((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(patch) as (keyof ContactDraft)[]) {
+        delete next[key];
+      }
+      return next;
+    });
+    setError(null);
+  }
+
+  /**
+   * Nobody continues to Square without a name, a phone number, and the address
+   * we are driving to. The contact step normally collects these; this is the
+   * backstop for anyone who lands on /pay directly.
+   */
   function contactReadyOrBlock() {
     setContactErrors(contact.errors);
-    if (contact.ok) return true;
+    if (contact.ok) {
+      saveContactDraft(draft);
+      setEditingContact(false);
+      return true;
+    }
     const missingRequired =
       contact.errors.name || contact.errors.phone || contact.errors.address;
     setError(
@@ -502,6 +518,22 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
       .catch(() => {});
     return () => controller.abort();
   }, [packageId, addonIds]);
+
+  // Details typed on the contact step (/book/details) arrive here through
+  // session storage, so the customer is not asked twice. Collapsed to a summary
+  // when they are complete; anyone who skipped the step gets the full form.
+  // Read after the first paint so the server and client markup still match.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.resolve(readContactDraft()).then((saved) => {
+      if (cancelled || !saved) return;
+      setDraft(saved);
+      setEditingContact(!validateContact(saved).ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Confirm the window from /book is still open. Looking is free — nothing is
   // reserved here, and the same check runs again server-side at checkout.
@@ -615,117 +647,42 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
 
       <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-8">
-          <fieldset data-testid="contact-fields">
-            <legend className="font-heading text-xl">Your info</legend>
-            <p className="mt-2 text-sm text-silver">{CONTACT_REQUIRED_NOTE}</p>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="contact-name">
-                  Full name <span className="text-gold">(required)</span>
-                </Label>
-                <Input
-                  id="contact-name"
-                  name="name"
-                  value={contactName}
-                  onChange={(e) => {
-                    setContactName(e.target.value);
-                    setContactErrors((prev) => ({ ...prev, name: undefined }));
-                    setError(null);
-                  }}
-                  autoComplete="name"
-                  maxLength={80}
-                  aria-required="true"
-                  aria-invalid={!!contactErrors.name}
-                  className="h-11"
-                />
-                {contactErrors.name ? (
-                  <p className="text-sm text-destructive" role="alert">
-                    {contactErrors.name}
-                  </p>
-                ) : null}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="contact-phone">
-                  Phone <span className="text-gold">(required)</span>
-                </Label>
-                <Input
-                  id="contact-phone"
-                  name="phone"
-                  type="tel"
-                  inputMode="tel"
-                  value={contactPhone}
-                  onChange={(e) => {
-                    setContactPhone(e.target.value);
-                    setContactErrors((prev) => ({ ...prev, phone: undefined }));
-                    setError(null);
-                  }}
-                  autoComplete="tel"
-                  placeholder="864-555-0134"
-                  maxLength={24}
-                  aria-required="true"
-                  aria-invalid={!!contactErrors.phone}
-                  className="h-11"
-                />
-                {contactErrors.phone ? (
-                  <p className="text-sm text-destructive" role="alert">
-                    {contactErrors.phone}
-                  </p>
-                ) : null}
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="contact-address">
-                  Service address <span className="text-gold">(required)</span>
-                </Label>
-                <Textarea
-                  id="contact-address"
-                  name="address"
-                  value={contactAddress}
-                  onChange={(e) => {
-                    setContactAddress(e.target.value);
-                    setContactErrors((prev) => ({ ...prev, address: undefined }));
-                    setError(null);
-                  }}
-                  autoComplete="street-address"
-                  maxLength={240}
-                  placeholder="123 Main St, Simpsonville SC 29681 — add apartment, gate code, or where the car sits"
-                  aria-required="true"
-                  aria-invalid={!!contactErrors.address}
-                  className="min-h-20"
-                />
-                {contactErrors.address ? (
-                  <p className="text-sm text-destructive" role="alert">
-                    {contactErrors.address}
-                  </p>
-                ) : null}
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="contact-email">
-                  Email <span className="text-silver/70">(optional)</span>
-                </Label>
-                <Input
-                  id="contact-email"
-                  name="email"
-                  type="email"
-                  value={contactEmail}
-                  onChange={(e) => {
-                    setContactEmail(e.target.value);
-                    setContactErrors((prev) => ({ ...prev, email: undefined }));
-                    setError(null);
-                  }}
-                  autoComplete="email"
-                  placeholder="Leave blank if you would rather not"
-                  maxLength={120}
-                  aria-invalid={!!contactErrors.email}
-                  className="h-11"
-                />
-                {contactErrors.email ? (
-                  <p className="text-sm text-destructive" role="alert">
-                    {contactErrors.email}
-                  </p>
-                ) : null}
-              </div>
+          <section data-testid="contact-section">
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <h2 className="font-heading text-xl">Your info</h2>
+              {!editingContact ? (
+                <button
+                  type="button"
+                  onClick={() => setEditingContact(true)}
+                  className="text-sm text-gold underline underline-offset-4"
+                  data-testid="edit-contact"
+                >
+                  Edit
+                </button>
+              ) : null}
             </div>
-          </fieldset>
+            {editingContact ? (
+              <div className="mt-4">
+                <ContactFields
+                  value={draft}
+                  errors={contactErrors}
+                  onChange={onContactChange}
+                />
+              </div>
+            ) : (
+              <div
+                className="mt-4 rounded-xl bg-[#121216] p-5 text-sm leading-relaxed ring-1 ring-white/10"
+                data-testid="contact-summary"
+              >
+                <p className="text-foreground">{contact.value?.name}</p>
+                <p className="mt-1 text-silver">{contact.value?.phoneDisplay}</p>
+                <p className="mt-1 text-silver">{contact.value?.address}</p>
+                {contact.value?.email ? (
+                  <p className="mt-1 text-silver">{contact.value.email}</p>
+                ) : null}
+              </div>
+            )}
+          </section>
 
           <fieldset>
             <legend className="font-heading text-xl">Package</legend>

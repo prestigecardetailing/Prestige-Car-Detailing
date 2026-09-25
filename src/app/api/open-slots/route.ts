@@ -27,13 +27,19 @@ export const dynamic = "force-dynamic";
  *       "endTime": "12:00",                   // local 24h end
  *       "durationMinutes": 240,
  *       "label": "Fri, Oct 3 · 8:00 AM – 12:00 PM EDT",
- *       "bookUrl": "/pay?slot=2026-10-03T0800"
+ *       "bookUrl": "/book/details?slot=2026-10-03T0800"
  *     }
  *   ]
  * }
  *
  * Slots are sorted earliest first and are always in the future by at least the
  * configured lead time.
+ *
+ * `bookUrl` is step 2 of the booking flow — the contact step. The full sequence
+ * is /book (pick a window) → /book/details?slot=<id> (name, phone, and service
+ * address required; email optional) → /pay?slot=<id> (waiver + Square). The slot
+ * is held only after Square confirms the payment, so a caller who drops out at
+ * any point leaves the window in this list.
  */
 export async function GET() {
   const config = availabilityConfig();
@@ -46,7 +52,7 @@ export async function GET() {
       count: slots.length,
       slots: slots.map((slot) => ({
         ...slot,
-        bookUrl: `/pay?slot=${encodeURIComponent(slot.id)}`,
+        bookUrl: `/book/details?slot=${encodeURIComponent(slot.id)}`,
       })),
     },
     {

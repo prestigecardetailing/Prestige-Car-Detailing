@@ -46,3 +46,58 @@ export function clearPendingBooking() {
     /* ignore */
   }
 }
+
+/**
+ * Caller info collected on the contact step (/book/details) and carried to /pay.
+ * Session storage rather than query params: this is the customer's name, phone,
+ * and home address, and it has no business sitting in a URL or a referrer header.
+ * /api/checkout re-validates it server-side regardless.
+ */
+export const CONTACT_SESSION_KEY = "pcw:contact";
+
+export type ContactDraft = {
+  name: string;
+  phone: string;
+  address: string;
+  email: string;
+};
+
+export const emptyContactDraft: ContactDraft = {
+  name: "",
+  phone: "",
+  address: "",
+  email: "",
+};
+
+export function saveContactDraft(draft: ContactDraft) {
+  try {
+    window.sessionStorage.setItem(CONTACT_SESSION_KEY, JSON.stringify(draft));
+  } catch {
+    /* private mode — /pay simply asks for the details again */
+  }
+}
+
+export function readContactDraft(): ContactDraft | null {
+  try {
+    const raw = window.sessionStorage.getItem(CONTACT_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ContactDraft>;
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      name: String(parsed.name || ""),
+      phone: String(parsed.phone || ""),
+      address: String(parsed.address || ""),
+      email: String(parsed.email || ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function clearContactDraft() {
+  try {
+    window.sessionStorage.removeItem(CONTACT_SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}

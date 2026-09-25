@@ -104,7 +104,7 @@ export function SlotPicker({
             {daySlots.map((slot) => (
               <Link
                 key={slot.id}
-                href={`/pay?slot=${encodeURIComponent(slot.id)}`}
+                href={`/book/details?slot=${encodeURIComponent(slot.id)}`}
                 data-slot-id={slot.id}
                 className="group flex flex-col rounded-xl bg-[#121216] px-5 py-4 text-left ring-1 ring-white/10 transition-colors hover:bg-gold/8 hover:ring-gold/50 focus-visible:ring-gold"
               >
@@ -115,7 +115,7 @@ export function SlotPicker({
                   {hours}-hour window · arrives within the window
                 </span>
                 <span className="mt-3 text-xs tracking-[0.18em] text-gold uppercase">
-                  Select &amp; pay →
+                  Select this time →
                 </span>
               </Link>
             ))}
