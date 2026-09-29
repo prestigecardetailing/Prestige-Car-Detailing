@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
-import { addons, formatMoney, packages } from "@/lib/catalog";
+import { formatMoney, optionalAddons, packages } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
 import { site } from "@/lib/site";
 
@@ -39,6 +39,11 @@ export default function ServicesPage() {
             {pkg.priceNote ? (
               <p className="mt-2 text-sm text-gold">{pkg.priceNote}</p>
             ) : null}
+            {pkg.scopeNote ? (
+              <p className="mt-4 max-w-3xl rounded-lg border border-white/10 bg-[#0b0b0d] p-4 text-sm leading-relaxed text-silver">
+                {pkg.scopeNote}
+              </p>
+            ) : null}
             <ul className="mt-5 list-disc space-y-1 pl-5 text-sm text-silver">
               {pkg.includes.map((item) => (
                 <li key={item}>{item}</li>
@@ -56,8 +61,13 @@ export default function ServicesPage() {
 
       <section className="mt-16">
         <h2 className="font-heading text-3xl">Add-ons</h2>
+        <p className="mt-3 max-w-3xl text-silver">
+          Any service that includes interior work also asks two required
+          questions before payment — pet hair and stains. Your total updates
+          automatically when you answer them on the pay page.
+        </p>
         <div className="mt-6 grid gap-4 md:grid-cols-2">
-          {addons.map((addon) => (
+          {optionalAddons.map((addon) => (
             <div
               key={addon.id}
               className="rounded-xl bg-[#121216] p-5 ring-1 ring-white/10"
