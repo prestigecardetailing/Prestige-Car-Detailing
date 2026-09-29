@@ -7,9 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  addons,
   formatMoney,
   getPackage,
+  interiorQuestions,
+  optionalAddons,
+  packageIncludesInterior,
   packages,
   resolveSelection,
 } from "@/lib/catalog";
@@ -70,6 +72,9 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     fromQuery || initialPackage || packages[0]?.id || "interior",
   );
   const [addonIds, setAddonIds] = useState<string[]>([]);
+  const [interiorAnswers, setInteriorAnswers] = useState<
+    Record<string, "yes" | "no">
+  >({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,14 +93,28 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     value: ReturnType<typeof payConfigForSelection>;
   } | null>(null);
 
-  const selection = useMemo(
-    () => resolveSelection(packageId, addonIds),
-    [packageId, addonIds],
+  const needsInteriorQuestions = packageIncludesInterior(packageId);
+  const interiorAnswered = interiorQuestions.every(
+    (q) => !!interiorAnswers[q.id],
   );
-  const selectionKey = `${packageId}:${addonIds.join(",")}`;
+  const effectiveAddonIds = useMemo(() => {
+    if (!needsInteriorQuestions) return addonIds;
+    return [
+      ...addonIds,
+      ...interiorQuestions
+        .filter((q) => interiorAnswers[q.id] === "yes")
+        .map((q) => q.addonId),
+    ];
+  }, [addonIds, interiorAnswers, needsInteriorQuestions]);
+
+  const selection = useMemo(
+    () => resolveSelection(packageId, effectiveAddonIds),
+    [packageId, effectiveAddonIds],
+  );
+  const selectionKey = `${packageId}:${effectiveAddonIds.join(",")}`;
   const localConfig = useMemo(
-    () => payConfigForSelection(packageId, addonIds),
-    [packageId, addonIds],
+    () => payConfigForSelection(packageId, effectiveAddonIds),
+    [packageId, effectiveAddonIds],
   );
   const config =
     remoteConfig?.key === selectionKey ? remoteConfig.value : localConfig;
@@ -119,7 +138,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
           agreedAt: at,
           packageId: selection.pkg.id,
           packageName: selection.pkg.name,
-          addonIds,
+          addonIds: effectiveAddonIds,
           userAgent: navigator.userAgent,
         }),
         signal: controller.signal,
@@ -177,7 +196,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         const res = await fetch("/api/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ packageId, addonIds }),
+          body: JSON.stringify({ packageId, addonIds: effectiveAddonIds }),
         });
         if (res.ok) {
           const data = await res.json();
@@ -191,7 +210,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
       }
       const fallback = await createCheckout(
         packageId,
-        addonIds,
+        effectiveAddonIds,
         window.location.origin,
       );
       if (fallback?.url) {
@@ -227,7 +246,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         agreedAtEastern: eastern,
         packageId: selection.pkg.id,
         packageName: selection.pkg.name,
-        addonIds: addonIds.join(","),
+        addonIds: effectiveAddonIds.join(","),
         addonNames,
         total: totalLabel,
         waiverVersion: WAIVER_VERSION,
@@ -255,7 +274,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
           name,
           agreedAt: at,
           packageId: selection.pkg.id,
-          addonIds,
+          addonIds: effectiveAddonIds,
           pdfUrl: pdf.url,
           pdfFilename: pdf.filename,
           userAgent: navigator.userAgent,
@@ -310,6 +329,12 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   }
 
   function onPayClick() {
+    if (needsInteriorQuestions && !interiorAnswered) {
+      setError(
+        "Answer both interior questions — pet hair and stains — before paying.",
+      );
+      return;
+    }
     if (!config.canChargeSelection) {
       setError("Square is not connected for this selection yet.");
       return;
@@ -345,9 +370,9 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   useEffect(() => {
     const params = new URLSearchParams({
       packageId,
-      addonIds: addonIds.join(","),
+      addonIds: effectiveAddonIds.join(","),
     });
-    const key = `${packageId}:${addonIds.join(",")}`;
+    const key = `${packageId}:${effectiveAddonIds.join(",")}`;
     const controller = new AbortController();
     fetch(`/api/pay-config?${params.toString()}`, { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
@@ -358,7 +383,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [packageId, addonIds]);
+  }, [packageId, effectiveAddonIds]);
 
   useEffect(() => {
     const el = waiverRef.current;
@@ -418,6 +443,11 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
                       <span className="mt-1 block text-sm text-silver">
                         {pkg.summary}
                       </span>
+                      {pkg.scopeNote ? (
+                        <span className="mt-3 block rounded-lg border border-white/10 bg-[#0b0b0d] px-3 py-2 text-xs leading-relaxed text-silver">
+                          {pkg.scopeNote}
+                        </span>
+                      ) : null}
                     </span>
                   </label>
                 );
@@ -425,10 +455,70 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
             </div>
           </fieldset>
 
+          {needsInteriorQuestions ? (
+            <div className="space-y-4">
+              <div>
+                <h2 className="font-heading text-xl">Interior questions</h2>
+                <p className="mt-2 text-sm text-silver">
+                  Both answers are required for any service that includes
+                  interior work. Your total updates as you answer.
+                </p>
+              </div>
+              {interiorQuestions.map((question) => {
+                const answer = interiorAnswers[question.id];
+                return (
+                  <fieldset
+                    key={question.id}
+                    className="rounded-xl bg-[#121216] p-4 ring-1 ring-white/10"
+                  >
+                    <legend className="px-1 text-sm font-medium">
+                      {question.legend}
+                      <span className="ml-2 text-xs text-gold">Required</span>
+                    </legend>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {(
+                        [
+                          { value: "yes" as const, label: question.yesLabel },
+                          { value: "no" as const, label: question.noLabel },
+                        ]
+                      ).map((option) => (
+                        <label
+                          key={option.value}
+                          className={cn(
+                            "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-3 ring-1 transition-colors",
+                            answer === option.value
+                              ? "bg-gold/8 ring-gold/50"
+                              : "bg-[#0b0b0d] ring-white/10 hover:ring-white/20",
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name={`interior-${question.id}`}
+                            value={option.value}
+                            checked={answer === option.value}
+                            onChange={() => {
+                              setError(null);
+                              setInteriorAnswers((prev) => ({
+                                ...prev,
+                                [question.id]: option.value,
+                              }));
+                            }}
+                            className="size-4 shrink-0 accent-[#d4af37]"
+                          />
+                          <span className="text-sm">{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                );
+              })}
+            </div>
+          ) : null}
+
           <fieldset>
             <legend className="font-heading text-xl">Add-ons</legend>
             <div className="mt-4 space-y-3">
-              {addons.map((addon) => {
+              {optionalAddons.map((addon) => {
                 const selected = addonIds.includes(addon.id);
                 return (
                   <label
@@ -497,7 +587,11 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
                 {formatMoney(selection.totalCents)}
               </span>
             </div>
-            {waiverSigned ? (
+            {needsInteriorQuestions && !interiorAnswered ? (
+              <p className="mt-6 text-xs text-gold" role="status">
+                Answer both interior questions to continue.
+              </p>
+            ) : waiverSigned ? (
               <p className="mt-6 text-xs text-gold" role="status">
                 Waiver signed by {signerName.trim()}
               </p>
@@ -510,7 +604,12 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
               type="button"
               size="lg"
               className="mt-6 h-12 w-full"
-              disabled={loading || savingWaiver || !config.canChargeSelection}
+              disabled={
+                loading ||
+                savingWaiver ||
+                !config.canChargeSelection ||
+                (needsInteriorQuestions && !interiorAnswered)
+              }
               onClick={onPayClick}
             >
               {loading

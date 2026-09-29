@@ -7,6 +7,9 @@ export type ServicePackage = {
   includes: string[];
   combo?: boolean;
   featured?: boolean;
+  /** Any interior work at all — drives the required interior questions. */
+  interior?: boolean;
+  scopeNote?: string;
 };
 
 export type Addon = {
@@ -14,14 +17,21 @@ export type Addon = {
   name: string;
   priceCents: number;
   description: string;
+  /** Priced through a required interior question, not the optional add-on list. */
+  interiorQuestion?: boolean;
 };
+
+export const INTERIOR_SCOPE_NOTE =
+  "This service includes a full interior cleaning — vacuuming, surface cleaning, and touch-ups throughout the cabin. It is not a deep restoration. If the interior is excessively filthy beyond what a typical cleaning includes, we may re-quote the price on-site or cancel the interior service. If the interior is canceled but the exterior is still performed, there is no additional charge. If the entire appointment is canceled on-site, a cancellation fee of 25% of the original quoted cost applies.";
 
 export const packages: ServicePackage[] = [
   {
     id: "interior",
     name: "Interior Clean",
-    priceCents: 5499,
+    priceCents: 6999,
     priceNote: "Heavy soil may need an add-on",
+    interior: true,
+    scopeNote: INTERIOR_SCOPE_NOTE,
     summary:
       "A full cabin reset — not a quick wipe. Carpets and mats get vacuumed; dash, console, doors, and plastics get a detailed wipe; interior glass is cleaned; trash is removed. Light stain attention as condition allows.",
     includes: [
@@ -43,10 +53,11 @@ export const packages: ServicePackage[] = [
   {
     id: "bronze",
     name: "Interior + Exterior",
-    priceCents: 9999,
+    priceCents: 11499,
     summary:
       "The complete everyday reset: the full Interior Clean plus the Exterior Clean, done together at your location.",
     combo: true,
+    interior: true,
     includes: [
       "Everything in Interior Clean",
       "Pre-rinse, snow foam, hand-wash, and hand dry",
@@ -59,6 +70,7 @@ export const packages: ServicePackage[] = [
     summary:
       "Interior and exterior, finished with a hand-applied protective glaze for multi-week gloss and shine.",
     combo: true,
+    interior: true,
     featured: true,
     includes: [
       "Everything in Interior Clean",
@@ -73,6 +85,7 @@ export const packages: ServicePackage[] = [
     summary:
       "The fullest exterior finish we offer: decontamination, machine polish, and protection, with the same Interior Clean as the cabin package.",
     combo: true,
+    interior: true,
     includes: [
       "Everything in Interior Clean",
       "Pre-rinse, snow foam, hand-wash, and hand dry",
@@ -98,18 +111,51 @@ export const addons: Addon[] = [
     description: "Truck, van, or large SUV — extra time and product.",
   },
   {
-    id: "dog-hair",
-    name: "Dog hair",
-    priceCents: 2999,
+    id: "pet-hair",
+    name: "Pet hair",
+    priceCents: 4000,
     description: "Extra time on pet hair in carpet, seats, and seams.",
+    interiorQuestion: true,
   },
   {
-    id: "stain-extraction",
-    name: "Stain extraction",
-    priceCents: 4999,
+    id: "stain-removal",
+    name: "Stain removal",
+    priceCents: 3000,
     description: "Targeted extraction on spots we can lift.",
+    interiorQuestion: true,
   },
 ];
+
+export type InteriorQuestion = {
+  id: string;
+  addonId: string;
+  legend: string;
+  yesLabel: string;
+  noLabel: string;
+};
+
+/**
+ * Asked as required radios — never checkboxes — on any package with interior
+ * work. Prices stay off the labels; the running total carries them.
+ */
+export const interiorQuestions: InteriorQuestion[] = [
+  {
+    id: "pet-hair",
+    addonId: "pet-hair",
+    legend: "Pet hair",
+    yesLabel: "Pet hair",
+    noLabel: "No pet hair",
+  },
+  {
+    id: "stains",
+    addonId: "stain-removal",
+    legend: "Stains",
+    yesLabel: "Stains to be removed",
+    noLabel: "No stains",
+  },
+];
+
+export const optionalAddons = addons.filter((a) => !a.interiorQuestion);
 
 const packageMap = new Map(packages.map((p) => [p.id, p]));
 const addonMap = new Map(addons.map((a) => [a.id, a]));
@@ -154,4 +200,8 @@ export function formatMoney(cents: number) {
 
 export function getPackage(id: string) {
   return packageMap.get(id);
+}
+
+export function packageIncludesInterior(id: string) {
+  return !!packageMap.get(id)?.interior;
 }

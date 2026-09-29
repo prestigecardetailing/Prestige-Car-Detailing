@@ -84,6 +84,11 @@ export default function HomePage() {
               {pkg.priceNote ? (
                 <p className="mt-3 text-xs text-gold">{pkg.priceNote}</p>
               ) : null}
+              {pkg.scopeNote ? (
+                <p className="mt-3 text-xs leading-relaxed text-silver/80">
+                  {pkg.scopeNote}
+                </p>
+              ) : null}
             </Link>
           ))}
         </div>
