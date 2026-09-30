@@ -108,7 +108,7 @@ export function SiteFooter() {
           <p>
             © {new Date().getFullYear()} {site.name}. Prepaid bookings. Move or
             cancel yourself up to {rescheduleCutoffHours} hours ahead —
-            cancellations inside {cancelCutoffHours} hours keep a{" "}
+            cancellations inside {cancelCutoffHours} hours keep a flat{" "}
             {formatMoney(lateCancelFeeCents)} fee.
           </p>
           <Link href="/privacy" className="hover:text-foreground">

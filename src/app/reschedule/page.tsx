@@ -27,7 +27,7 @@ export default function ReschedulePage() {
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-silver/80">
         Need to cancel instead? Cancel {cancelCutoffHours} or more hours ahead for
         a full refund. Inside {cancelCutoffHours} hours we keep a{" "}
-        {formatMoney(lateCancelFeeCents)} late-cancellation fee and refund
+        flat {formatMoney(lateCancelFeeCents)} cancellation fee and refund
         everything else.
       </p>
 

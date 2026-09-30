@@ -116,9 +116,9 @@ export function bookingConfirmationText(
     } — ${formatMoney(record.totalCents)} paid`,
     "",
     `Reschedule yourself up to ${config.rescheduleCutoffHours}h before the start; inside that, call ${site.phone}.`,
-    `Cancel ${config.cancelCutoffHours}h+ ahead = full refund. Inside ${config.cancelCutoffHours}h we keep ${formatMoney(
+    `Cancel ${config.cancelCutoffHours}h+ ahead = full refund. Inside ${config.cancelCutoffHours}h a flat ${formatMoney(
       config.lateCancelFeeCents,
-    )} and refund the rest.`,
+    )} fee is kept and the rest refunded — same flat fee for an on-site cancel.`,
     `Manage: ${site.url}/reschedule?ref=${record.id}`,
     site.url,
   ];

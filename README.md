@@ -125,11 +125,15 @@ old one, patches the Google Calendar event when one exists, and emails the shop.
 - `POST /api/bookings/reschedule` `{ ref, slotId }` — 409 `code: "too-late"` inside the cutoff
 - `POST /api/bookings/cancel` `{ ref }` — undo an unpaid selection, or quote/execute a paid cancellation
 
-### Cancellation policy (Derek, 2026-09-24)
+### Cancellation policy (Derek, 2026-09-29)
 
 - **24 or more hours before the window starts:** full refund of everything paid.
-- **Inside 24 hours:** a **$25** late-cancellation fee is retained and everything
+- **Inside 24 hours:** a **flat $35** cancellation fee is retained and everything
   else is refunded.
+- **On site:** the same **flat $35** applies once we have arrived, whether the
+  customer calls off the whole job or only the interior portion. This replaces the
+  old $25 late fee and the old 25%-of-quote on-site fee, so there is one number
+  everywhere.
 - **After the window has started:** not a self-service cancellation — the page
   tells the customer to call 864-619-4911.
 
@@ -159,11 +163,20 @@ The public Google Appointment Schedule iframe was removed on purpose: finishing 
 Google booking holds the slot immediately, before payment. `BOOKING_CALENDAR_URL`
 in `src/lib/site.ts` is kept as an admin-only reference.
 
+### Published booking windows
+
+Prestige publishes **two** windows per open day: **9:00 AM and 2:30 PM Eastern**.
+Availability varies — `/book` and `GET /api/open-slots` show only what is actually
+open, and that calendar is the public answer to "when can you come?". There is no
+two-per-day cap and no sequencing rule anywhere in the public page: opening or
+closing a window is an edit to `src/data/availability.json` (or the
+`PRESTIGE_AVAILABILITY` override), nothing more.
+
 ### Changing open hours
 
 Edit `src/data/availability.json` and deploy:
 
-- `weekly` — recurring start times per weekday, local 24-hour (`"08:00"`)
+- `weekly` — recurring start times per weekday, local 24-hour (`"09:00"`, `"14:30"`)
 - `extraDates` — one-off openings, `"2026-10-03": ["08:00"]`
 - `blackoutDates` / `blackoutSlots` — days or single windows to pull down
 - `slotMinutes` — appointment length (currently 240 = 4 hours)
@@ -172,7 +185,7 @@ Edit `src/data/availability.json` and deploy:
 - `rescheduleCutoffHours` — self-service reschedule closes this long before the
   window starts (24)
 - `cancelCutoffHours` — full-refund boundary for cancellations (24)
-- `lateCancelFeeCents` — retained on a late cancellation (2500 = $25)
+- `lateCancelFeeCents` — retained on a late cancellation (3500 = $35)
 
 To change hours without a deploy, set the `PRESTIGE_AVAILABILITY` env var to a
 JSON object with the same keys; it is merged over the file.

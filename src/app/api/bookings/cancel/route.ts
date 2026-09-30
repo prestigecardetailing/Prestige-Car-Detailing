@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
  *   reply { status: "cancelled", booking }.
  *
  * The quote follows the Prestige policy: full refund 24+ hours out, otherwise a
- * $25 late-cancellation fee is retained and the remainder refunded.
+ * flat $35 cancellation fee is retained and the remainder refunded.
  */
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as {

@@ -121,7 +121,7 @@ function refundOutcome(cancelled: CancelledRecord) {
     return `Square is sending ${refundLabel} back to the card you paid with. Refunds usually land in a few business days.`;
   }
   if (cancelled.refundStatus === "not-needed") {
-    return "Nothing is left to refund after the late-cancellation fee.";
+    return "Nothing is left to refund after the flat cancellation fee.";
   }
   return `The shop has been notified to refund ${refundLabel} to your card. If you do not see it, call ${site.phone}.`;
 }
@@ -321,9 +321,9 @@ export function ManageBooking({
               </p>
               <p className="mt-2">
                 {cancelled.cancelled.policy === "late-fee"
-                  ? `Cancelled inside ${cancelled.cancellation.cutoffHours} hours, so the ${formatMoney(
+                  ? `Cancelled inside ${cancelled.cancellation.cutoffHours} hours, so the flat ${formatMoney(
                       cancelled.cancelled.feeCents,
-                    )} late-cancellation fee was kept.`
+                    )} cancellation fee was kept.`
                   : `Cancelled with more than ${cancelled.cancellation.cutoffHours} hours' notice, so nothing was kept.`}{" "}
                 {refundOutcome(cancelled.cancelled)}
               </p>
@@ -359,9 +359,10 @@ export function ManageBooking({
               <h3 className="font-heading text-xl">Cancel instead?</h3>
               <p className="mt-2 text-sm leading-relaxed text-silver">
                 Cancel {quote.cutoffHours} or more hours before your window and
-                you get a full refund. Inside {quote.cutoffHours} hours we keep a{" "}
-                {quote.lateFeeLabel} late-cancellation fee and refund everything
-                else.
+                you get a full refund. Inside {quote.cutoffHours} hours we keep a
+                flat {quote.lateFeeLabel} cancellation fee and refund everything
+                else — the same flat {quote.lateFeeLabel} applies if you cancel
+                once we are on site, whole job or interior only.
                 {quote.fullRefundUntilLabel
                   ? ` Full-refund cutoff for this booking: ${quote.fullRefundUntilLabel}.`
                   : ""}
@@ -384,7 +385,7 @@ export function ManageBooking({
                         Your window starts in about {quote.hoursBeforeStart} hours,
                         which is inside the {quote.cutoffHours}-hour cutoff. You
                         paid {quote.paidLabel}; we keep {quote.feeLabel} as the
-                        late-cancellation fee and refund{" "}
+                        flat cancellation fee and refund{" "}
                         <strong className="text-gold">{quote.refundLabel}</strong>.
                       </>
                     ) : (

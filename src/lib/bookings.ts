@@ -263,9 +263,9 @@ export async function confirmBooking(
       record.slot
         ? `Cancellation policy: full refund ${
             cancellationQuote(record).cutoffHours
-          }+ hours out; inside that we keep ${formatMoney(
+          }+ hours out; inside that a flat ${formatMoney(
             availabilityConfig().lateCancelFeeCents,
-          )} and refund the rest.`
+          )} is kept and the rest refunded — same flat fee for an on-site cancel, whole job or interior only.`
         : "",
       `Slot list: ${site.url}/api/open-slots`,
     ]
@@ -383,9 +383,11 @@ export type CancellationQuote = {
 };
 
 /**
- * Prestige cancellation policy (2026-09-24):
+ * Prestige cancellation policy (Derek, 2026-09-29):
  * - 24+ hours before the window starts → full refund.
- * - inside 24 hours → keep a $25 late-cancellation fee, refund the rest.
+ * - inside 24 hours → keep a flat $35 cancellation fee, refund the rest. The
+ *   same flat $35 is what the shop charges for an on-site cancellation of the
+ *   whole job or of the interior portion, so the number only lives in one place.
  * Both numbers live in src/data/availability.json (`cancelCutoffHours`,
  * `lateCancelFeeCents`). After the window has started it stops being a
  * self-service cancellation and becomes a phone call.

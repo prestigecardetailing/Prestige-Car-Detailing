@@ -36,8 +36,14 @@ export default function CancelPage() {
             <strong className="text-foreground">
               Inside {cancelCutoffHours} hours:
             </strong>{" "}
-            we keep a {formatMoney(lateCancelFeeCents)} late-cancellation fee and
-            refund the rest.
+            a flat {formatMoney(lateCancelFeeCents)} cancellation fee is kept and
+            everything else is refunded.
+          </li>
+          <li>
+            <strong className="text-foreground">On site:</strong> the same flat{" "}
+            {formatMoney(lateCancelFeeCents)} applies if you cancel once we have
+            arrived — whether you call off the whole job or only the interior
+            portion.
           </li>
           <li>
             Once the window has started, cancellation is a phone call —{" "}

@@ -27,7 +27,7 @@ export function hostedOnNetlify() {
  * Admin reference only. The public site no longer embeds this Google Appointment
  * Schedule: finishing a Google booking holds the slot immediately, before the
  * customer has paid. Open availability now lives in `src/data/availability.json`
- * and is served by `/api/open-slots`; the calendar below stays useful as Emory's
+ * and is served by `/api/open-slots`; the calendar below stays useful as Emery's
  * own view of the week.
  */
 export const BOOKING_CALENDAR_URL =

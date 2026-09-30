@@ -3,8 +3,12 @@ import { listHeldSlotIds } from "@/lib/booking-store";
 
 /**
  * Site-owned availability. Google Appointment Schedules stay an *admin* view of
- * Emory's hours — the public site never books through them, because completing a
+ * Emery's hours — the public site never books through them, because completing a
  * Google booking holds the slot before the customer has paid.
+ *
+ * Prestige publishes two windows per open day, 9:00 AM and 2:30 PM Eastern.
+ * Availability varies and the calendar is the only source of truth for what is
+ * open — nothing here caps a day or sequences the two windows.
  *
  * Source of truth is `src/data/availability.json`. To change hours without a
  * deploy, set the `PRESTIGE_AVAILABILITY` env var to a JSON object with the same
@@ -20,7 +24,11 @@ export type AvailabilityConfig = {
   rescheduleCutoffHours: number;
   /** Cancel this far ahead and the refund is full; inside it, the late fee applies. */
   cancelCutoffHours: number;
-  /** Retained on a late cancellation. Everything above it is refunded. */
+  /**
+   * Flat fee retained on any cancellation inside the cutoff. Everything above it
+   * is refunded. Derek, 2026-09-29: $35, and the same $35 applies to an on-site
+   * cancellation of the whole job or of the interior portion.
+   */
   lateCancelFeeCents: number;
   /** Recurring weekly openings: weekday name -> list of local start times ("08:00"). */
   weekly: Record<string, string[]>;
@@ -66,7 +74,7 @@ const fallback: AvailabilityConfig = {
   horizonDays: 21,
   rescheduleCutoffHours: 24,
   cancelCutoffHours: 24,
-  lateCancelFeeCents: 2500,
+  lateCancelFeeCents: 3500,
   weekly: {},
   extraDates: {},
   blackoutDates: [],

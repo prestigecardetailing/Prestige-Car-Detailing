@@ -136,8 +136,8 @@ export function SuccessConfirm() {
           <p className="mt-3">
             Need to cancel? Cancel {reply.cancellation.cutoffHours} or more hours
             before your window for a full refund. Inside{" "}
-            {reply.cancellation.cutoffHours} hours we keep a{" "}
-            {reply.cancellation.lateFeeLabel} late-cancellation fee and refund
+            {reply.cancellation.cutoffHours} hours we keep a flat{" "}
+            {reply.cancellation.lateFeeLabel} cancellation fee and refund
             everything else.{" "}
             <Link
               href={`/cancel?ref=${encodeURIComponent(reply.reference)}`}
