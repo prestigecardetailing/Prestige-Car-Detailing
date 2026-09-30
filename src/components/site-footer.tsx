@@ -94,6 +94,14 @@ export function SiteFooter() {
             ))}
             <li>
               <Link
+                href="/account"
+                className="text-silver hover:text-foreground"
+              >
+                Account
+              </Link>
+            </li>
+            <li>
+              <Link
                 href="/privacy"
                 className="text-silver hover:text-foreground"
               >

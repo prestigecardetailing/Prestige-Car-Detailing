@@ -16,12 +16,39 @@ import { type ContactErrors, validateContact } from "@/lib/contact";
 import { site } from "@/lib/site";
 import type { OpenSlot } from "@/lib/slots";
 
+const REQUIRED_FIELD_ORDER = [
+  "firstName",
+  "lastName",
+  "phone",
+  "address",
+  "city",
+  "state",
+  "zip",
+  "email",
+  "password",
+] as const;
+
+const FIELD_INPUT_ID: Record<string, string> = {
+  firstName: "contact-first-name",
+  lastName: "contact-last-name",
+  phone: "contact-phone",
+  address: "contact-address",
+  city: "contact-city",
+  state: "contact-state",
+  zip: "contact-zip",
+  email: "contact-email",
+  password: "contact-password",
+};
+
 /**
  * Step 2 of the booking flow: /book → /book/details?slot=... → /pay?slot=...
  *
  * Nothing is held here either — this step only collects the caller info Prestige
- * needs before a booking can be confirmed, and refuses to hand the customer on
- * to payment until name, phone, and the service address are all filled in.
+ * needs before a booking can be confirmed, and refuses to hand the customer on to
+ * payment until the name, phone, and full service address are filled in.
+ *
+ * The password is optional and never travels further than this step: if one is
+ * typed, the account is created here and the password is dropped.
  */
 export function ContactStep() {
   const router = useRouter();
@@ -29,8 +56,10 @@ export function ContactStep() {
   const slotId = (searchParams.get("slot") || "").trim();
 
   const [draft, setDraft] = useState<ContactDraft>(emptyContactDraft);
+  const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<ContactErrors>({});
   const [summary, setSummary] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [lookup, setLookup] = useState<{ id: string; slot: OpenSlot | null } | null>(
     null,
   );
@@ -79,28 +108,62 @@ export function ContactStep() {
     setSummary(null);
   }
 
-  function onContinue() {
-    const contact = validateContact(draft);
+  function focusFirstError(current: ContactErrors) {
+    const field = REQUIRED_FIELD_ORDER.find((key) => current[key]);
+    if (!field) return;
+    document
+      .getElementById(FIELD_INPUT_ID[field])
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  async function onContinue() {
+    const contact = validateContact({ ...draft, password });
     setErrors(contact.errors);
     if (!contact.ok) {
       setSummary(
-        contact.errors.name || contact.errors.phone || contact.errors.address
-          ? "Add your name, phone, and service address to continue to payment."
-          : "Check the details above to continue to payment.",
+        "Fill in your name, phone, and the full service address to continue to payment.",
       );
-      const firstBad = contact.errors.name
-        ? "contact-name"
-        : contact.errors.phone
-          ? "contact-phone"
-          : contact.errors.address
-            ? "contact-address"
-            : "contact-email";
-      document
-        .getElementById(firstBad)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      focusFirstError(contact.errors);
       return;
     }
+
     saveContactDraft(draft);
+
+    // Optional account. A failure here must not block the booking, so the only
+    // thing that stops the customer is a password that clashes with an existing
+    // account — otherwise they carry on to payment either way.
+    if (password) {
+      setSaving(true);
+      try {
+        const res = await fetch("/api/account/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...draft, password }),
+        });
+        if (res.status === 409) {
+          const data = await res.json().catch(() => null);
+          setErrors({
+            password:
+              data?.fields?.password ||
+              "That password does not match the account already on this phone number.",
+          });
+          setSummary(
+            data?.error ||
+              "There is already an account on that phone number. Enter its password, or clear the password to book without an account.",
+          );
+          focusFirstError({ password: "clash" });
+          return;
+        }
+        if (!res.ok) {
+          console.warn("Account create failed", res.status);
+        }
+      } catch (err) {
+        console.warn("Account create failed", err);
+      } finally {
+        setSaving(false);
+      }
+    }
+
     router.push(slotId ? `/pay?slot=${encodeURIComponent(slotId)}` : "/pay");
   }
 
@@ -155,7 +218,23 @@ export function ContactStep() {
       <div className="rounded-xl bg-[#121216] p-6 ring-1 ring-white/10 sm:p-8">
         <h2 className="font-heading text-xl">Your info</h2>
         <div className="mt-4">
-          <ContactFields value={draft} errors={errors} onChange={onChange} />
+          <ContactFields
+            value={draft}
+            errors={errors}
+            onChange={onChange}
+            password={{
+              value: password,
+              onChange: (next) => {
+                setPassword(next);
+                setErrors((prev) => {
+                  const rest = { ...prev };
+                  delete rest.password;
+                  return rest;
+                });
+                setSummary(null);
+              },
+            }}
+          />
         </div>
 
         {summary ? (
@@ -169,10 +248,11 @@ export function ContactStep() {
             type="button"
             size="lg"
             className="h-12 px-6"
-            onClick={onContinue}
+            disabled={saving}
+            onClick={() => void onContinue()}
             data-testid="continue-to-payment"
           >
-            Continue to payment
+            {saving ? "Saving your details…" : "Continue to payment"}
           </Button>
           <a
             href={site.phoneTel}

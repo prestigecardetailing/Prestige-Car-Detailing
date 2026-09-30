@@ -16,9 +16,10 @@ export default function BookDetailsPage() {
         Where are we coming?
       </h1>
       <p className="mt-5 max-w-2xl text-lg leading-relaxed text-silver">
-        We are mobile, so we need a name, a phone number, and the address where
-        the vehicle will be. Email is optional. Nothing is charged and no time is
-        reserved on this screen.
+        We are mobile, so we need your first and last name, a callback phone, and
+        the full address where the vehicle will be — street, city, state, and ZIP.
+        Email is optional, and a password is only needed if you want an account.
+        Nothing is charged and no time is reserved on this screen.
       </p>
 
       <div className="mt-10">

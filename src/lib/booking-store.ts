@@ -44,11 +44,20 @@ export type BookingRecord = {
   totalCents: number;
   customer: {
     name?: string;
+    firstName?: string;
+    lastName?: string;
     phone?: string;
     email?: string;
     vehicle?: string;
+    /** One-line service address, as it goes on the calendar event. */
     location?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
   };
+  /** Set when the customer had, or created, an account at checkout. */
+  accountId?: string;
   waiver: {
     name?: string;
     agreedAt?: string;
@@ -132,7 +141,8 @@ function tmpPath(key: string) {
   return path.join("/tmp", "pcw-bookings", `${key.replace(/\//g, "_")}.json`);
 }
 
-async function readDoc<T>(key: string): Promise<T | null> {
+/** Also the store the account records use — see `src/lib/accounts.ts`. */
+export async function readDoc<T>(key: string): Promise<T | null> {
   const store = await blobStore();
   if (store) {
     try {
@@ -152,7 +162,7 @@ async function readDoc<T>(key: string): Promise<T | null> {
   return (memory().get(key) as T) ?? null;
 }
 
-async function writeDoc(key: string, value: unknown): Promise<void> {
+export async function writeDoc(key: string, value: unknown): Promise<void> {
   memory().set(key, value);
   const store = await blobStore();
   if (store) {

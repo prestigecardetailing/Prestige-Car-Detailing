@@ -18,7 +18,13 @@ import {
   googleCalendarConfigured,
   updateCalendarHold,
 } from "@/lib/google-calendar";
+import { postToHub } from "@/lib/hub-ingest";
 import { notifyOwnerFromServer } from "@/lib/notify-owner";
+import {
+  OWNER_EMAIL,
+  describeOwnerSms,
+  sendOwnerBookingSms,
+} from "@/lib/owner-notify";
 import { refundSquarePayment } from "@/lib/square";
 import { sendBookingConfirmationSms } from "@/lib/sms";
 import { site } from "@/lib/site";
@@ -36,6 +42,8 @@ export type CreateBookingInput = {
   customer?: BookingRecord["customer"];
   waiver?: BookingRecord["waiver"];
   source: BookingRecord["square"]["source"];
+  /** Optional customer account this booking belongs to. */
+  accountId?: string;
 };
 
 export type BookingErrorCode =
@@ -102,6 +110,7 @@ export async function createPendingBooking(
     waiver: input.waiver || null,
     square: { source: input.source },
     hold: null,
+    ...(input.accountId ? { accountId: input.accountId } : {}),
   };
   await saveBooking(record);
   return record;
@@ -121,6 +130,10 @@ function bookingSummary(record: BookingRecord) {
     record.customer.email ? `Email: ${record.customer.email}` : "",
     record.customer.vehicle ? `Vehicle: ${record.customer.vehicle}` : "",
     record.customer.location ? `Location: ${record.customer.location}` : "",
+    record.customer.city
+      ? `City/state/ZIP: ${[record.customer.city, record.customer.state, record.customer.zip].filter(Boolean).join(" ")}`
+      : "",
+    record.accountId ? `Customer account: ${record.accountId}` : "",
     record.waiver?.name ? `Waiver signed by: ${record.waiver.name}` : "",
     record.waiver?.agreedAt ? `Waiver signed at: ${record.waiver.agreedAt}` : "",
     record.waiver?.pdfUrl ? `Waiver PDF: ${record.waiver.pdfUrl}` : "",
@@ -225,6 +238,36 @@ export async function confirmBooking(
     return { status: "failed" as const, detail: "exception" };
   });
 
+  // …and text the shop. Private numbers, server-side only (see owner-notify.ts).
+  const ownerSms = await sendOwnerBookingSms(record).catch((err) => {
+    console.warn("Owner SMS threw", err);
+    return [];
+  });
+
+  // Everything about the booking, including the payment metadata and the signed
+  // waiver, also goes to the mcelreath.intelligence hub.
+  const hub = await postToHub("booking", record.id, {
+    status: "paid",
+    verification: options.verification,
+    slot: record.slot,
+    package: { id: record.packageId, name: record.packageName },
+    addons: record.addonIds.map((id, index) => ({
+      id,
+      name: record.addonNames[index],
+    })),
+    totalCents: record.totalCents,
+    customer: record.customer,
+    accountId: record.accountId,
+    waiver: record.waiver,
+    payment: {
+      source: record.square.source,
+      orderId: record.square.orderId,
+      paymentId: record.square.paymentId,
+      checkoutId: record.square.checkoutId,
+    },
+    manageUrl: `${site.url}/reschedule?ref=${record.id}`,
+  }).catch(() => ({ status: "failed" as const }));
+
   const notify = await notifyOwnerFromServer({
     subject: record.slot
       ? `Prestige PAID booking — ${record.slot.label}`
@@ -234,6 +277,7 @@ export async function confirmBooking(
     message: [
       "PAID — the slot is now held on the site.",
       `Payment verified via: ${options.verification}`,
+      `Booking inbox: ${OWNER_EMAIL}`,
       "",
       bookingSummary(record),
       "",
@@ -254,6 +298,12 @@ export async function confirmBooking(
           : sms.status === "skipped"
             ? "Confirmation SMS: no usable phone on this booking."
             : `Confirmation SMS ${sms.status.toUpperCase()} (${sms.detail || "no detail"}) — text the customer by hand.`,
+      describeOwnerSms(ownerSms),
+      hub.status === "sent"
+        ? "Hub ingest: posted."
+        : hub.status === "skipped"
+          ? "Hub ingest: not configured on this deploy (PRESTIGE_HUB_INGEST_URL / PRESTIGE_HUB_INGEST_SECRET)."
+          : "Hub ingest: FAILED — this booking is not in the hub yet.",
       "",
       record.slot
         ? `Customer can move or cancel this themselves at ${site.url}/reschedule?ref=${record.id} (move until ${

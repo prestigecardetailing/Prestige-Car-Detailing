@@ -43,6 +43,28 @@ function toQuery(data: Record<string, string>) {
   return new URLSearchParams(data).toString();
 }
 
+const CONTACT_FIELD_ORDER = [
+  "firstName",
+  "lastName",
+  "phone",
+  "address",
+  "city",
+  "state",
+  "zip",
+  "email",
+] as const;
+
+const CONTACT_FIELD_INPUT_ID: Record<string, string> = {
+  firstName: "contact-first-name",
+  lastName: "contact-last-name",
+  phone: "contact-phone",
+  address: "contact-address",
+  city: "contact-city",
+  state: "contact-state",
+  zip: "contact-zip",
+  email: "contact-email",
+};
+
 function parseAmountCents(raw: string) {
   const cleaned = raw.replace(/[^0-9.]/g, "");
   if (!cleaned) return null;
@@ -101,8 +123,10 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const [error, setError] = useState<string | null>(null);
 
   // Caller info, normally carried over from the contact step (/book/details).
-  // Name, phone, and the service address are required before we hand anyone to
-  // Square; anyone who lands here directly fills them in right on this page.
+  // Name, phone, and the full service address are required before we hand anyone
+  // to Square; anyone who lands here directly fills them in right on this page.
+  // The optional account password is not collected again here — that happens once,
+  // on the details step.
   const [draft, setDraft] = useState<ContactDraft>(emptyContactDraft);
   const [contactErrors, setContactErrors] = useState<ContactErrors>({});
   const [editingContact, setEditingContact] = useState(true);
@@ -259,9 +283,13 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
             packageId,
             addonIds,
             slotId: slotState === "open" ? slot?.id : undefined,
-            name: contact.value?.name,
+            firstName: contact.value?.firstName,
+            lastName: contact.value?.lastName,
             phone: contact.value?.phone,
             address: contact.value?.address,
+            city: contact.value?.city,
+            state: contact.value?.state,
+            zip: contact.value?.zip,
             email: contact.value?.email || undefined,
             waiver,
           }),
@@ -332,7 +360,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         window: slotState === "open" && slot ? slot.label : "No window selected",
         phone: contact.value?.phoneDisplay || "",
         email: contact.value?.email || "",
-        location: contact.value?.address || "",
+        location: contact.value?.fullAddress || "",
         waiverVersion: WAIVER_VERSION,
         payUrl: `${site.url}/pay`,
         pdfUrl: pdf.url,
@@ -369,7 +397,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
         subject: `Prestige Car Wash waiver — ${name}`,
         name,
         phone: contact.value?.phoneDisplay || "",
-        location: contact.value?.address || "",
+        location: contact.value?.fullAddress || "",
         pdf: pdf.url,
         pdfId: pdf.id,
         message: [
@@ -390,7 +418,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
           "",
           `Legal name (signature): ${name}`,
           `Phone: ${contact.value?.phoneDisplay || "(not given)"}`,
-          `Service address: ${contact.value?.address || "(not given)"}`,
+          `Service address: ${contact.value?.fullAddress || "(not given)"}`,
           `Email: ${contact.value?.email || "(not given)"}`,
           `Signed at (ISO): ${at}`,
           `Signed at (America/New_York): ${eastern}`,
@@ -438,9 +466,9 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   }
 
   /**
-   * Nobody continues to Square without a name, a phone number, and the address
-   * we are driving to. The contact step normally collects these; this is the
-   * backstop for anyone who lands on /pay directly.
+   * Nobody continues to Square without a name, a phone number, and the full
+   * address we are driving to. The contact step normally collects these; this is
+   * the backstop for anyone who lands on /pay directly.
    */
   function contactReadyOrBlock() {
     setContactErrors(contact.errors);
@@ -449,23 +477,15 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
       setEditingContact(false);
       return true;
     }
-    const missingRequired =
-      contact.errors.name || contact.errors.phone || contact.errors.address;
     setError(
-      missingRequired
-        ? "Add your name, phone, and service address before continuing to payment."
-        : "Check the contact details above before continuing to payment.",
+      "Add your name, phone, and the full service address before continuing to payment.",
     );
-    const firstBad = contact.errors.name
-      ? "contact-name"
-      : contact.errors.phone
-        ? "contact-phone"
-        : contact.errors.address
-          ? "contact-address"
-          : "contact-email";
-    document
-      .getElementById(firstBad)
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const firstBad = CONTACT_FIELD_ORDER.find((key) => contact.errors[key]);
+    if (firstBad) {
+      document
+        .getElementById(CONTACT_FIELD_INPUT_ID[firstBad])
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
     return false;
   }
 
@@ -682,7 +702,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
               >
                 <p className="text-foreground">{contact.value?.name}</p>
                 <p className="mt-1 text-silver">{contact.value?.phoneDisplay}</p>
-                <p className="mt-1 text-silver">{contact.value?.address}</p>
+                <p className="mt-1 text-silver">{contact.value?.fullAddress}</p>
                 {contact.value?.email ? (
                   <p className="mt-1 text-silver">{contact.value.email}</p>
                 ) : null}
@@ -820,8 +840,8 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
             )}
             {!contact.ok ? (
               <p className="mt-2 text-xs text-silver" data-testid="contact-hint">
-                Your name, phone, and service address go in above before you can
-                continue to payment. Email is optional.
+                Your name, phone, and full service address go in above before you
+                can continue to payment. Email is optional.
               </p>
             ) : null}
             <Button
