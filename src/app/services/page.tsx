@@ -89,7 +89,14 @@ export default function ServicesPage() {
             This is a mobile service. Same-day is typical when the calendar is
             open.
           </li>
-          <li>Service area: {site.serviceArea}.</li>
+          <li>
+            Service area: {site.serviceArea}.{" "}
+            <strong className="text-gold">{site.mobileOnlyNote}</strong>
+          </li>
+          <li>
+            Bookings run at {site.bookingWindows}. Availability varies — the
+            calendar on the Book page shows the open windows.
+          </li>
         </ul>
       </section>
     </div>

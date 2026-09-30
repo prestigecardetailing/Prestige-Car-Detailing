@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { ContactForm } from "@/components/contact-form";
 import { site } from "@/lib/site";
 
+// The URL stays /contact; the visible label everywhere is "Message the shop".
 export const metadata: Metadata = {
-  title: "Message",
+  title: "Message the shop",
   description: `Contact ${site.name} to request a visit or reschedule.`,
 };
 
@@ -11,9 +12,10 @@ export default function ContactPage() {
   return (
     <div className="mx-auto grid w-full max-w-6xl gap-12 px-4 py-14 sm:px-6 lg:grid-cols-[1fr_1.1fr] lg:py-20">
       <div>
-        <h1 className="font-heading text-4xl sm:text-5xl">
+        <h1 className="font-heading text-4xl sm:text-5xl">Message the shop.</h1>
+        <p className="mt-4 text-lg text-silver">
           Request a visit, or send a note.
-        </h1>
+        </p>
         <p className="mt-5 text-lg leading-relaxed text-silver">
           The shop gets this form by email. Use it to request a visit, ask about
           a vehicle or location, or reschedule a prepaid booking. You can also

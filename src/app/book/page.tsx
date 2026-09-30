@@ -21,16 +21,17 @@ export default async function BookPage() {
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 lg:py-20">
       <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl">
-        Pick a window. We come to you.
+        Pick a time — {site.bookingWindows}.
       </h1>
       <p className="mt-5 max-w-2xl text-lg leading-relaxed text-silver">
-        Every time below is open right now. Choose one and you go straight to the
-        waiver and Square. The window is only reserved once your payment clears —
-        if you stop partway through, it stays open for the next customer.
+        Availability varies, so the calendar below is the real answer: every time
+        on it is open right now. Choose one and you go straight to your details,
+        the waiver, and Square. The window is only reserved once your payment
+        clears — if you stop partway through, it stays open for the next customer.
       </p>
       <p className="mt-3 max-w-2xl text-sm text-silver/80">
-        Appointments run {hours} hours. Same-day is typical when the calendar is
-        open. To move a prepaid booking, call {site.phone}.
+        Appointments run {hours} hours. {site.mobileOnlyNote} Same-day is typical
+        when the calendar is open. To move a prepaid booking, call {site.phone}.
       </p>
 
       <div className="mt-10">

@@ -45,12 +45,16 @@ export default function HomePage() {
               Service area
             </p>
             <p className="mt-3 text-lg text-foreground">{site.serviceArea}</p>
+            <p className="mt-2 text-sm font-medium text-gold">
+              {site.mobileOnlyNote}
+            </p>
             <p className="mt-4 text-sm leading-relaxed text-silver">
               Cars, SUVs, trucks, and vans. Large vehicles and heavier interiors
               are quoted after we see them — not guessed on this site.
             </p>
             <ul className="mt-6 space-y-2 text-sm text-silver">
               <li>We come to you</li>
+              <li>Bookings at {site.bookingWindows}</li>
               <li>Same-day typical</li>
               <li>Prepaid before the visit</li>
             </ul>

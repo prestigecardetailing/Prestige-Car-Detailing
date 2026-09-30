@@ -6,6 +6,11 @@ export const site = {
   description:
     "Prestige Car Wash is a mobile car detailing service for Simpsonville, Greenville, and about 20 miles around. Book a time, pay in full, and we come to you. Same-day is typical.",
   serviceArea: "Simpsonville, Greenville, and about 20 miles around",
+  /** Sits next to the service area everywhere it is shown. */
+  mobileOnlyNote:
+    "Mobile only — no storefront. We come to your driveway or lot.",
+  /** Published booking windows. Availability varies; /book is the real answer. */
+  bookingWindows: "9:00 AM or 2:30 PM Eastern",
   phone: "864-619-4911",
   phoneTel: "tel:+18646194911",
 } as const;
@@ -13,6 +18,8 @@ export const site = {
 export const navItems = [
   { href: "/", label: "Home" },
   { href: "/services", label: "Services" },
+  { href: "/gallery", label: "Gallery" },
+  { href: "/about", label: "About" },
   { href: "/book", label: "Book" },
   { href: "/pay", label: "Pay" },
 ] as const;

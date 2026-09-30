@@ -81,7 +81,7 @@ export function SlotPicker({
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-silver sm:text-base">
           {refreshing
             ? "Loading the current openings…"
-            : `New ${hours}-hour windows post here as soon as they open. Call and we will fit you in.`}
+            : `Nothing is open at this moment. New ${hours}-hour windows — ${site.bookingWindows} — post here as soon as they open. Call and we will fit you in.`}
         </p>
         <a
           href={site.phoneTel}
