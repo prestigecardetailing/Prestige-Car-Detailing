@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { FORMSUBMIT_AJAX_HASH } from "@/lib/site";
+import { notifyOwnerFromServer } from "@/lib/notify-owner";
 
 type WaiverBody = {
   name?: string;
@@ -11,6 +11,11 @@ type WaiverBody = {
   userAgent?: string;
 };
 
+/**
+ * Server-side copy of the signed waiver. The browser already emails the shop, but
+ * this is the path that does not depend on the customer's tab staying open — the
+ * PDF link has to reach the owner inbox so the waiver can be filed later.
+ */
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as WaiverBody;
   const name = String(body.name || "").trim();
@@ -21,7 +26,7 @@ export async function POST(request: NextRequest) {
   const agreedAt = String(body.agreedAt || new Date().toISOString());
   const message = [
     "Signed liability waiver — Prestige Car Wash",
-    `Legal name: ${name}`,
+    `Legal name (signature): ${name}`,
     `Signed at: ${agreedAt}`,
     `Package id: ${body.packageId || "(before selection)"}`,
     `Add-ons: ${(body.addonIds || []).join(", ") || "None"}`,
@@ -32,32 +37,12 @@ export async function POST(request: NextRequest) {
     .filter(Boolean)
     .join("\n");
 
-  let delivered = false;
-  try {
-    const res = await fetch(
-      `https://formsubmit.co/ajax/${FORMSUBMIT_AJAX_HASH}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          _subject: `Prestige Car Wash waiver — ${name}`,
-          _template: "box",
-          _captcha: "false",
-          name,
-          message,
-          pdf: body.pdfUrl || "",
-        }),
-      },
-    );
-    const data = await res.json().catch(() => ({}));
-    delivered =
-      res.ok && data.success !== false && data.success !== "false";
-  } catch (err) {
-    console.warn("waiver notify failed", err);
-  }
+  const notify = await notifyOwnerFromServer({
+    subject: `Prestige Car Wash waiver — ${name}`,
+    name,
+    message,
+    pdf: body.pdfUrl || "",
+  }).catch(() => ({ status: "failed" as const }));
 
-  return NextResponse.json({ ok: true, delivered });
+  return NextResponse.json({ ok: true, delivered: notify.status === "sent" });
 }

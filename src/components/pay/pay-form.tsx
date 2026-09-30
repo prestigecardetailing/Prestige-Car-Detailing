@@ -73,7 +73,11 @@ function formatEastern(iso: string) {
  * - Waiver modal ONLY when user clicks Pay for a package.
  * - Hard modal: Esc / backdrop do not dismiss; Cancel Pay or complete (agree + typed name).
  * - Other fees path skips the waiver.
- * - Checkbox enabled only after scrolling the waiver body to the bottom.
+ *
+ * WO (2026-09-29): the waiver body still scrolls and still tells the customer to
+ * read to the end, but scrolling no longer gates anything. The "I have read this"
+ * checkbox and the signature field are live from the moment the modal opens, and
+ * checking the box is what unlocks continuing.
  *
  * WO (2026-09-24): pay-first booking. A window arrives as ?slot=<id> from /book and
  * is shown here, but nothing is reserved — the hold is written server-side only
@@ -145,8 +149,10 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const squareOpen = openAmountLink();
   const otherCents = parseAmountCents(otherAmount);
   const otherReady = !!(otherReason.trim() && otherCents);
+  // Reading to the end is asked for, not enforced: checking the box and signing
+  // is what unlocks payment.
   const canSubmitWaiver =
-    scrolled && agreed && signerName.trim().length >= 2 && !savingWaiver;
+    agreed && signerName.trim().length >= 2 && !savingWaiver;
   const contact = validateContact(draft);
 
   async function storeWaiverPdf(name: string, at: string) {
@@ -862,9 +868,9 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
               {WAIVER_TITLE}
             </h2>
             <p className="mt-3 text-xs leading-relaxed text-silver">
-              {WAIVER_DISCLAIMER} Scroll to the end, check that you agree, and
-              type your full legal name. This window stays open until you agree
-              or cancel Pay.
+              {WAIVER_DISCLAIMER} Read to the end, check that you agree, and type
+              your full legal name. This window stays open until you agree or
+              cancel Pay.
             </p>
 
             <div
@@ -896,48 +902,49 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
             </div>
 
             {!scrolled ? (
-              <p
-                className="mt-3 rounded-md border border-gold/40 bg-gold/10 px-3 py-2 text-sm text-gold"
-                role="status"
-              >
-                Scroll to the bottom of the waiver to continue.
+              <p className="mt-3 text-xs text-silver" role="status">
+                Please scroll to the bottom and read the whole waiver before you
+                agree.
               </p>
             ) : (
               <p className="mt-3 text-xs text-silver" role="status">
-                End of waiver reached — you can agree below.
+                End of waiver reached.
               </p>
             )}
 
-            <label
-              className={cn(
-                "mt-6 flex items-start gap-3",
-                scrolled ? "cursor-pointer" : "cursor-not-allowed opacity-50",
-              )}
-            >
+            <label className="mt-6 flex cursor-pointer items-start gap-3">
               <input
                 type="checkbox"
                 checked={agreed}
-                disabled={!scrolled || savingWaiver}
+                disabled={savingWaiver}
                 onChange={(e) => setAgreed(e.target.checked)}
                 className="mt-1 size-4 shrink-0 accent-[#d4af37]"
+                data-testid="waiver-agree"
               />
               <span className="text-sm">
-                I have read and agree to this service agreement and liability
-                waiver.
+                I have read this service agreement and liability waiver, and I
+                agree to it.
               </span>
             </label>
 
-            <div className="mt-4 space-y-2">
+            <div className="mt-6 space-y-2">
               <Label htmlFor="waiver-name">
-                Type your full legal name as signature
+                Your full legal name{" "}
+                <span className="text-gold">(required — this is your signature)</span>
               </Label>
+              <p className="text-xs leading-relaxed text-silver">
+                Type your full legal name exactly as it appears on your ID — first
+                and last name. Typing it here signs this waiver.
+              </p>
               <Input
                 id="waiver-name"
                 value={signerName}
                 onChange={(e) => setSignerName(e.target.value)}
                 autoComplete="name"
                 maxLength={80}
-                disabled={!scrolled || savingWaiver}
+                placeholder="First and last name"
+                aria-required="true"
+                disabled={savingWaiver}
                 className="h-11"
               />
             </div>

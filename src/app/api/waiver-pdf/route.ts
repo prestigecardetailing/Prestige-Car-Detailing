@@ -26,12 +26,54 @@ function wrapText(text: string, maxChars: number) {
   return lines;
 }
 
+/** "prestige-waiver-jane-q-doe-2026-09-29.pdf" — filesystem and Drive friendly. */
+function waiverFilename(name: string, agreedAt: string) {
+  const person =
+    name
+      .normalize("NFKD")
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase()
+      .slice(0, 48) || "customer";
+  const signedMs = Date.parse(agreedAt);
+  const day = new Date(Number.isNaN(signedMs) ? Date.now() : signedMs)
+    .toISOString()
+    .slice(0, 10);
+  return `prestige-waiver-${person}-${day}.pdf`;
+}
+
 async function buildPdf(input: {
   name: string;
   agreedAt: string;
   packageName?: string;
 }) {
   const doc = await PDFDocument.create();
+
+  // Metadata so the file is identifiable on its own, without the email around it.
+  const signedMs = Date.parse(input.agreedAt);
+  const signedAt = new Date(Number.isNaN(signedMs) ? Date.now() : signedMs);
+  doc.setTitle(
+    `Prestige Car Wash liability waiver — ${input.name} — ${signedAt
+      .toISOString()
+      .slice(0, 10)}`,
+  );
+  doc.setAuthor(input.name);
+  doc.setSubject(
+    `Signed ${WAIVER_TITLE} (version ${WAIVER_VERSION}) for ${
+      input.packageName || "a Prestige Car Wash detail"
+    }`,
+  );
+  doc.setKeywords([
+    "Prestige Car Wash",
+    "liability waiver",
+    input.name,
+    signedAt.toISOString().slice(0, 10),
+    WAIVER_VERSION,
+  ]);
+  doc.setProducer("prestigecarwashsc.com");
+  doc.setCreationDate(signedAt);
+  doc.setModificationDate(signedAt);
+
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   let page = doc.addPage([612, 792]);
@@ -101,10 +143,7 @@ export async function POST(request: NextRequest) {
       agreedAt,
       packageName: String(body.packageName || ""),
     });
-    const stored = await storeWaiverPdf(
-      bytes,
-      `prestige-waiver-${name.replace(/\s+/g, "-").toLowerCase().slice(0, 40)}.pdf`,
-    );
+    const stored = await storeWaiverPdf(bytes, waiverFilename(name, agreedAt));
 
     // Prefer absolute path-style PDF URLs so FormSubmit / mail clients keep the link
     const origin =
