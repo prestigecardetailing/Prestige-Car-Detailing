@@ -11,6 +11,14 @@ import {
   readContactDraft,
   saveContactDraft,
 } from "@/lib/booking-session";
+import {
+  payPath,
+  readyForDetails,
+  selectionFromQuery,
+  servicePath,
+  timePath,
+} from "@/lib/booking-flow";
+import { formatMoney, resolveSelection } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
 import { type ContactErrors, validateContact } from "@/lib/contact";
 import { site } from "@/lib/site";
@@ -41,19 +49,19 @@ const FIELD_INPUT_ID: Record<string, string> = {
 };
 
 /**
- * Step 2 of the booking flow: /book → /book/details?slot=... → /pay?slot=...
+ * Customer information — the third step, and the one that waits for the other
+ * two. The car wash type and the time slot can be done in either order, but this
+ * screen only unlocks once both are chosen; until then it points back at whichever
+ * one is missing. From here the order is fixed: waiver, then the pay screen.
  *
- * Nothing is held here either — this step only collects the caller info Prestige
- * needs before a booking can be confirmed, and refuses to hand the customer on to
- * payment until the name, phone, and full service address are filled in.
- *
- * The password is optional and never travels further than this step: if one is
- * typed, the account is created here and the password is dropped.
+ * Nothing is held here either. The password is optional and never travels further
+ * than this step: if one is typed, the account is created here and it is dropped.
  */
 export function ContactStep() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const slotId = (searchParams.get("slot") || "").trim();
+  const selection = selectionFromQuery((key) => searchParams.get(key));
+  const { packageId, addonIds, slotId } = selection;
 
   const [draft, setDraft] = useState<ContactDraft>(emptyContactDraft);
   const [password, setPassword] = useState("");
@@ -95,6 +103,15 @@ export function ContactStep() {
 
   const ready = !!slotId && lookup?.id === slotId;
   const slot = ready ? lookup.slot : null;
+  const bothChosen = readyForDetails(selection);
+  let order: ReturnType<typeof resolveSelection> | null = null;
+  if (packageId) {
+    try {
+      order = resolveSelection(packageId, addonIds);
+    } catch {
+      order = null;
+    }
+  }
 
   function onChange(patch: Partial<ContactDraft>) {
     setDraft((prev) => ({ ...prev, ...patch }));
@@ -117,11 +134,17 @@ export function ContactStep() {
   }
 
   async function onContinue() {
+    if (!bothChosen) {
+      setSummary(
+        "Finish choosing your car wash and your time slot before we take your details.",
+      );
+      return;
+    }
     const contact = validateContact({ ...draft, password });
     setErrors(contact.errors);
     if (!contact.ok) {
       setSummary(
-        "Fill in your name, phone, and the full service address to continue to payment.",
+        "Fill in your name, phone, and the full service address to continue to the waiver.",
       );
       focusFirstError(contact.errors);
       return;
@@ -164,111 +187,174 @@ export function ContactStep() {
       }
     }
 
-    router.push(slotId ? `/pay?slot=${encodeURIComponent(slotId)}` : "/pay");
+    router.push(payPath(selection));
   }
 
   return (
     <div className="space-y-8">
-      <div
-        className={cn(
-          "rounded-xl p-5 ring-1 sm:p-6",
-          slot ? "bg-gold/8 ring-gold/50" : "bg-[#121216] ring-white/10",
-        )}
-        data-testid="step-slot"
-      >
-        <p className="text-xs tracking-[0.24em] text-gold uppercase">
-          {slot ? "Window you picked" : "Window"}
-        </p>
-        {!slotId ? (
-          <>
-            <p className="font-heading mt-2 text-2xl">No window picked yet.</p>
-            <p className="mt-2 text-sm leading-relaxed text-silver">
-              Start on the Book page and choose an open time, or fill this in and
-              pay — we will call to schedule.
-            </p>
-          </>
-        ) : !ready ? (
-          <p className="mt-2 text-sm text-silver">Checking that window…</p>
-        ) : slot ? (
-          <>
-            <p className="font-heading mt-2 text-2xl">{slot.label}</p>
-            <p className="mt-2 text-sm leading-relaxed text-silver">
-              Not reserved yet. We hold it the moment Square confirms your
-              payment on the next screen.
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="font-heading mt-2 text-2xl">
-              That window is no longer on the board.
-            </p>
-            <p className="mt-2 text-sm leading-relaxed text-silver">
-              Someone paid for it first, or it aged out. Pick another open time.
-            </p>
-          </>
-        )}
-        <Link
-          href="/book"
-          className={cn(buttonVariants({ variant: "outline" }), "mt-4 h-10 px-4")}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div
+          className={cn(
+            "rounded-xl p-5 ring-1",
+            order ? "bg-gold/8 ring-gold/50" : "bg-[#121216] ring-white/10",
+          )}
+          data-testid="step-package"
         >
-          {slot ? "Change time" : "See open windows"}
-        </Link>
-      </div>
-
-      <div className="rounded-xl bg-[#121216] p-6 ring-1 ring-white/10 sm:p-8">
-        <h2 className="font-heading text-xl">Your info</h2>
-        <div className="mt-4">
-          <ContactFields
-            value={draft}
-            errors={errors}
-            onChange={onChange}
-            password={{
-              value: password,
-              onChange: (next) => {
-                setPassword(next);
-                setErrors((prev) => {
-                  const rest = { ...prev };
-                  delete rest.password;
-                  return rest;
-                });
-                setSummary(null);
-              },
-            }}
-          />
-        </div>
-
-        {summary ? (
-          <p className="mt-5 text-sm text-destructive" role="alert">
-            {summary}
+          <p className="text-xs tracking-[0.24em] text-gold uppercase">
+            Car wash type
           </p>
-        ) : null}
-
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <Button
-            type="button"
-            size="lg"
-            className="h-12 px-6"
-            disabled={saving}
-            onClick={() => void onContinue()}
-            data-testid="continue-to-payment"
-          >
-            {saving ? "Saving your details…" : "Continue to payment"}
-          </Button>
-          <a
-            href={site.phoneTel}
+          {order ? (
+            <>
+              <p className="font-heading mt-2 text-2xl">{order.pkg.name}</p>
+              <p className="mt-1 text-sm text-silver">
+                {formatMoney(order.totalCents)}
+                {order.selectedAddons.length > 0
+                  ? ` · ${order.selectedAddons.map((a) => a.name).join(", ")}`
+                  : ""}
+              </p>
+            </>
+          ) : (
+            <p className="font-heading mt-2 text-2xl">Not chosen yet.</p>
+          )}
+          <Link
+            href={servicePath(selection)}
             className={cn(
-              buttonVariants({ variant: "outline", size: "lg" }),
-              "h-12 px-5",
+              buttonVariants({ variant: "outline" }),
+              "mt-4 h-10 px-4",
             )}
           >
-            Rather book by phone? Call {site.phone}
-          </a>
+            {order ? "Change car wash" : "Choose your car wash"}
+          </Link>
         </div>
-        <p className="mt-4 text-xs leading-relaxed text-silver/80">
-          Next screen: pick your package, sign the liability waiver, and pay
-          through Square. The window is held only once that payment clears.
-        </p>
+
+        <div
+          className={cn(
+            "rounded-xl p-5 ring-1",
+            slot ? "bg-gold/8 ring-gold/50" : "bg-[#121216] ring-white/10",
+          )}
+          data-testid="step-slot"
+        >
+          <p className="text-xs tracking-[0.24em] text-gold uppercase">
+            Time slot
+          </p>
+          {!slotId ? (
+            <p className="font-heading mt-2 text-2xl">Not chosen yet.</p>
+          ) : !ready ? (
+            <p className="mt-2 text-sm text-silver">Checking that window…</p>
+          ) : slot ? (
+            <>
+              <p className="font-heading mt-2 text-2xl">{slot.label}</p>
+              <p className="mt-1 text-sm text-silver">
+                Not reserved until Square confirms your payment.
+              </p>
+            </>
+          ) : (
+            <p className="font-heading mt-2 text-2xl">
+              That window is no longer open.
+            </p>
+          )}
+          <Link
+            href={timePath(selection)}
+            className={cn(
+              buttonVariants({ variant: "outline" }),
+              "mt-4 h-10 px-4",
+            )}
+          >
+            {slot ? "Change time" : "See open windows"}
+          </Link>
+        </div>
       </div>
+
+      {!bothChosen ? (
+        <div
+          className="rounded-xl bg-[#121216] p-6 ring-1 ring-white/10 sm:p-8"
+          data-testid="details-locked"
+        >
+          <h2 className="font-heading text-2xl">
+            One more choice before your details.
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-silver sm:text-base">
+            {!packageId && !slotId
+              ? "Pick the car wash you want and an open window, then we will ask who you are and where to come."
+              : !packageId
+                ? "Your window is picked. Choose the car wash that goes with it and this screen opens."
+                : "Your car wash is picked. Choose one of the open windows and this screen opens."}
+          </p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            {!packageId ? (
+              <Link
+                href={servicePath(selection)}
+                className={cn(buttonVariants({ size: "lg" }), "h-11 px-5")}
+              >
+                Choose your car wash
+              </Link>
+            ) : null}
+            {!slotId ? (
+              <Link
+                href={timePath(selection)}
+                className={cn(buttonVariants({ size: "lg" }), "h-11 px-5")}
+              >
+                Pick an open time
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl bg-[#121216] p-6 ring-1 ring-white/10 sm:p-8">
+          <h2 className="font-heading text-xl">Your info</h2>
+          <div className="mt-4">
+            <ContactFields
+              value={draft}
+              errors={errors}
+              onChange={onChange}
+              password={{
+                value: password,
+                onChange: (next) => {
+                  setPassword(next);
+                  setErrors((prev) => {
+                    const rest = { ...prev };
+                    delete rest.password;
+                    return rest;
+                  });
+                  setSummary(null);
+                },
+              }}
+            />
+          </div>
+
+          {summary ? (
+            <p className="mt-5 text-sm text-destructive" role="alert">
+              {summary}
+            </p>
+          ) : null}
+
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              size="lg"
+              className="h-12 px-6"
+              disabled={saving}
+              onClick={() => void onContinue()}
+              data-testid="continue-to-payment"
+            >
+              {saving ? "Saving your details…" : "Continue to the waiver"}
+            </Button>
+            <a
+              href={site.phoneTel}
+              className={cn(
+                buttonVariants({ variant: "outline", size: "lg" }),
+                "h-12 px-5",
+              )}
+            >
+              Rather book by phone? Call {site.phone}
+            </a>
+          </div>
+          <p className="mt-4 text-xs leading-relaxed text-silver/80">
+            Next screen: sign the liability waiver, then pay through Square. The
+            window is held only once that payment clears.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

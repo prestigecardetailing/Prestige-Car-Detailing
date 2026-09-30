@@ -1,24 +1,43 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { BookingSteps } from "@/components/book/booking-steps";
 import { PayForm } from "@/components/pay/pay-form";
+import { readSelection } from "@/lib/booking-flow";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Pay",
-  description: `Pay in full for ${site.name} mobile detailing.`,
+  description: `Sign the waiver and pay in full for ${site.name} mobile detailing.`,
 };
 
-export default function PayPage() {
+export default async function PayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    package?: string | string[];
+    addons?: string | string[];
+    slot?: string | string[];
+  }>;
+}) {
+  const selection = readSelection(await searchParams);
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 lg:py-20">
-      <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl">
-        Pay the package in full.
+      <BookingSteps
+        current="waiver"
+        done={[
+          ...(selection.packageId ? (["service"] as const) : []),
+          ...(selection.slotId ? (["time"] as const) : []),
+          "details" as const,
+        ]}
+      />
+      <h1 className="font-heading mt-5 text-4xl sm:text-5xl lg:text-6xl">
+        Sign the waiver, then pay.
       </h1>
       <p className="mt-5 max-w-2xl text-lg leading-relaxed text-silver">
-        Choose a package and add-ons freely. When you click Pay, you&apos;ll sign
-        the liability waiver, then continue to Square. If you came from a window
-        on the Book page, that window is reserved for you only after Square
-        confirms the payment.
+        This is the last screen. When you click Pay, the liability waiver opens —
+        sign it and you continue straight to Square. The window you picked is
+        reserved for you only after Square confirms the payment.
       </p>
       <div className="mt-10">
         <Suspense fallback={<p className="text-silver">Loading pay form…</p>}>
