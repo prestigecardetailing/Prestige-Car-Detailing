@@ -15,9 +15,10 @@ A calendar window is **never** reserved by picking it. The order is:
 
 1. **Pick a time** — `/book` lists the windows Prestige currently has open
    (4 hours each) from `GET /api/open-slots`.
-2. **Enter details** — `/book/details?slot=<id>` collects the caller info.
-   Name, phone, and the physical service address are required; email is
-   optional. "Continue to payment" is blocked until the required fields are
+2. **Enter details** — `/book/details?slot=<id>` collects the caller info. First
+   name, last name, callback phone, and the full service address (street, city,
+   state, ZIP) are required; email is optional, and so is a password for an
+   account. "Continue to payment" is blocked until the required fields are
    filled. Nothing is held on this screen either.
 3. **Pay** — `/pay?slot=<id>` carries the details over, takes the package
    selection and the liability waiver, and hands off to Square.
@@ -25,19 +26,43 @@ A calendar window is **never** reserved by picking it. The order is:
    not affect availability.
 4. Square confirms the charge → `POST /api/bookings/confirm` (from `/pay/success`)
    or the Square webhook writes the **hold**, creates the Google Calendar event
-   when credentials exist, texts the customer a confirmation, and emails the shop.
+   when credentials exist, texts the customer a confirmation, texts Emery and
+   Derek, posts the record to the hub, and emails the shop.
 
 Abandoning Square, closing the tab, or a declined card leaves the window listed
 on `/book` for the next customer.
 
+## Pages
+
+| Route | What it is |
+| --- | --- |
+| `/` | Home — packages, how it works, testimonials |
+| `/services` | Packages, add-ons, and what to know before booking |
+| `/gallery` | 20 labeled placeholders. Nothing on it is a real job yet. |
+| `/about` | Who Emery is and what the business is built for |
+| `/book` → `/book/details` → `/pay` | The pay-first booking flow |
+| `/pay/success` | Confirms the Square charge and writes the hold |
+| `/reschedule`, `/cancel` | Self-service booking changes |
+| `/account` | Optional account: sign in, see past washes |
+| `/contact` | The message form. Labeled **"Message the shop"** everywhere it is linked; the URL stays `/contact`. |
+| `/privacy` | Prestige-only privacy policy |
+
 ### Caller info required before any booking confirm
 
-Name, phone, and the **physical service address** are required before a customer
-reaches Square; email is offered but **optional**. The `Your info` fieldset sits
-at the top of `/pay`, and clicking Pay with any required field missing — or an
-unparseable phone, or an address with no street number — shows field-level
-errors and never opens the waiver or Square. The address is also what lands on
-the Google Calendar event as the event location.
+Required before a customer reaches Square (Derek, 2026-09-29):
+
+- **First name** and **last name**
+- **Callback phone**
+- **Street address**, **city**, **state**, **ZIP** — the whole thing, because
+  this is a mobile service and the van has to get there
+
+Optional: **email**, and a **password** (which only creates an account — see
+below). The `Your info` fieldset sits at the top of `/pay`, and clicking Pay with
+any required field missing — or an unparseable phone, a street line with no
+number, a state that is not a US code, a ZIP that is not five digits — shows
+field-level errors and never opens the waiver or Square. The four address parts
+are joined into one line (`123 Main St, Simpsonville, SC 29681`) for the Google
+Calendar event location, the Square payment note, and the owner emails.
 
 `src/lib/contact.ts` holds the one validator both sides use. `/api/checkout`
 re-runs it and answers `400 { code: "contact-required", fields: {…} }`, so the
@@ -46,14 +71,104 @@ pre-fill the Square checkout screen (`pre_populated_data`), and appear in the
 waiver and owner emails.
 
 **Phone/voice path:** when a `book_slot` tool is wired for the phone agent it
-must collect the same three required fields and call `validateContact` before
-creating a booking. The web flow enforces it today.
+must collect the same required fields and call `validateContact` before creating a
+booking. A legacy single `name` is split into first/last for compatibility, but
+city, state, and ZIP have no fallback — they are required. The web flow enforces
+all of it today.
+
+### Optional customer accounts
+
+An account is never required to book. The details step (`/book/details`) has one
+optional password field: type one and `POST /api/account/register` creates the
+account, signs the browser in with an httpOnly cookie, and the password is
+dropped — it is never written to session storage and never travels to `/pay`.
+
+- **Account** button in the site header → `/account`
+- `GET /api/account` — the signed-in customer plus their past washes. Only reads
+  bookings already linked to that account, so no customer can see another's.
+- `POST /api/account/login` `{ phone, password }` — phone number is the login
+  handle. Unknown phone and wrong password give the same 401, so the endpoint
+  cannot be used to probe for accounts.
+- `POST /api/account/logout`
+
+Passwords are stored as scrypt hashes with a per-account random salt
+(`src/lib/accounts.ts`). Plain text is never stored, logged, or sent to the hub.
+Records live in the same layered store as bookings (Netlify Blobs, then `/tmp`,
+then process memory) under `account/…`, with `account-phone/…` mapping a
+normalized phone to an account id.
+
+Sessions are signed with `PRESTIGE_ACCOUNT_SECRET`. When it is unset the process
+signs with a random per-boot key: sessions still work but do not survive a
+redeploy, which is the right failure mode — never a predictable key.
+
+### Booking notifications (Derek, item 13)
+
+When a payment is confirmed, four things happen and none of them can block the
+hold, the calendar event, or each other:
+
+1. **Owner email** to **mcelreath.intelligence@gmail.com** — the full booking
+   summary, the payment metadata, and the status of everything below. Delivery
+   rides the existing `notifyOwnerFromServer` path, so the inbox is whatever the
+   `WEB3FORMS_ACCESS_KEY` (or the FormSubmit hash) is registered to. **That key
+   has to point at mcelreath.intelligence@gmail.com** — the address is not a
+   request parameter on either provider.
+2. **SMS to Emery** and **SMS to Derek** at their private mobile numbers.
+3. **Customer confirmation SMS** with the window, address, package, amount, and
+   the cancellation terms (see below).
+4. **Hub ingest** of the whole record — booking, customer, account id, payment
+   metadata, signed waiver.
+
+The owner numbers live in `src/lib/owner-notify.ts`. **That module is server-side
+only.** It is imported from route handlers and server helpers, never from a
+`"use client"` component, because importing it into client code would ship the
+private numbers in the browser bundle. `PRESTIGE_OWNER_SMS_TO` (comma-separated)
+overrides them without touching code. The only phone number any public page shows
+is `site.phone`, 864-619-4911.
+
+### Hub ingest
+
+`src/lib/hub-ingest.ts` is the one client for the mcelreath.intelligence hub.
+There was no prior hub pattern in this repo, so everything goes through it:
+
+```jsonc
+POST $PRESTIGE_HUB_INGEST_URL
+Authorization: Bearer $PRESTIGE_HUB_INGEST_SECRET
+X-Prestige-Kind: booking            // booking | account | waiver | payment
+X-Prestige-Reference: <booking ref>
+{
+  "kind": "booking",
+  "reference": "deb9b53674cd4109",
+  "source": "prestigecarwashsc.com",
+  "at": "2026-09-29T18:00:00.000Z",
+  "data": { /* booking, customer, accountId, payment metadata, waiver */ }
+}
+```
+
+With either variable missing it logs `[hub:skipped]` and sends nothing. It never
+throws. No card data (Square never hands us any) and no passwords go over this
+wire — only the fact that an account has one.
+
+### Square receipt email (Derek, item 14)
+
+**Already Square's default.** The Payment Links / Online Checkout flow emails the
+buyer a receipt itself; there is no API flag on `checkout_options` to turn it on,
+and nothing in `src/lib/square.ts` suppresses it. Two things have to stay true:
+
+1. `pre_populated_data.buyer_email` is sent whenever we captured an email, so the
+   buyer does not have to retype it on the Square screen.
+2. Square Dashboard → Settings → **Customer receipts** stays enabled on the
+   Prestige location.
+
+The site's own confirmation text is still sent separately, because Square's
+receipt cannot carry the window, the service address, or the cancellation terms.
 
 ### Post-payment confirmation SMS
 
-When a payment is confirmed the customer gets a text with their name, the window,
-the service address, the package and amount paid, the reschedule and cancellation
-rules, and `https://prestigecarwashsc.com`. Roughly 425 characters.
+When a payment is confirmed the customer gets a text with their name, the window
+(date and time), the service address, the package and amount paid, the reschedule
+rule, the **flat $35 inside 24 hours** cancellation rule, and
+`https://prestigecarwashsc.com`. Roughly 425 characters. This is the item-15
+confirmation; Square's receipt email (above) is the emailed half.
 
 Square's own receipt SMS is **not** a substitute: it cannot carry the window, the
 service address, or the cancellation terms this message is required to state.
@@ -237,7 +352,10 @@ upgrades a fallback.
 | `PRESTIGE_AVAILABILITY` | JSON override for `src/data/availability.json`. |
 | `PRESTIGE_NOTIFY_DISABLED` | `1` on preview/local runs so test payments do not email the shop. |
 | `SQUARE_API_BASE_URL` | Test-only override for the Square API host, so a local stub can stand in for Square. Never set this in production. |
-| `NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY` / `WEB3FORMS_ACCESS_KEY` | Preferred owner-notification channel; FormSubmit is the fallback. |
+| `NEXT_PUBLIC_WEB3FORMS_ACCESS_KEY` / `WEB3FORMS_ACCESS_KEY` | Preferred owner-notification channel; FormSubmit is the fallback. The key must be registered to **mcelreath.intelligence@gmail.com** — neither provider takes the recipient as a request parameter. |
+| `PRESTIGE_HUB_INGEST_URL`, `PRESTIGE_HUB_INGEST_SECRET` | Posts bookings, accounts, payment metadata, and signed waivers to the mcelreath.intelligence hub. Both required; a logged no-op otherwise. |
+| `PRESTIGE_ACCOUNT_SECRET` | Signing key for the optional customer-account session cookie. Unset means a random per-boot key: sessions work but do not survive a redeploy. |
+| `PRESTIGE_OWNER_SMS_TO` | Comma-separated override for the owner SMS destinations. Defaults to Emery and Derek's numbers in `src/lib/owner-notify.ts` (server-side only, never public). |
 
 When the Google vars are absent the hold still happens on the site and the shop
 gets an email with the full window details and a note to add the calendar event
