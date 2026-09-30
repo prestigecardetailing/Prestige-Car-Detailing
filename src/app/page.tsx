@@ -135,28 +135,70 @@ export default function HomePage() {
 
       <section className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
         <h2 className="font-heading text-4xl sm:text-5xl">
-          Ready when you are.
+          What customers said.
         </h2>
-        <p className="mt-4 max-w-2xl text-lg text-silver">
-          Reserve a window, then pay the package total. If you need to move a
-          prepaid booking, message the shop.
+        <p className="mt-4 max-w-2xl text-silver">
+          Kept anonymous, listed by city.
         </p>
-        <div className="mt-8 flex flex-wrap gap-3">
-          <Link
-            href="/book"
-            className={cn(buttonVariants({ size: "lg" }), "h-12 px-6")}
-          >
-            Book
-          </Link>
-          <a
-            href={site.phoneTel}
-            className={cn(
-              buttonVariants({ variant: "outline", size: "lg" }),
-              "h-12 px-6",
-            )}
-          >
-            {site.phone}
-          </a>
+        <div className="mt-10 grid gap-4 md:grid-cols-3">
+          {[
+            {
+              city: "Greenville",
+              quote:
+                "I can't believe you got all the stains out. My car looks so much better.",
+            },
+            {
+              city: "Travelers Rest",
+              quote:
+                "A turkey scratched up my roof and Emery buffed out almost all of it — you can barely see the last one.",
+            },
+            {
+              city: "Simpsonville",
+              quote:
+                "I brought my car in pretty dirty and was surprised by how well he turned it around.",
+            },
+          ].map((item) => (
+            <figure
+              key={item.city}
+              className="flex flex-col rounded-xl bg-[#121216] p-6 ring-1 ring-white/10"
+            >
+              <blockquote className="flex-1 text-lg leading-relaxed text-foreground">
+                &ldquo;{item.quote}&rdquo;
+              </blockquote>
+              <figcaption className="mt-5 text-xs tracking-[0.28em] text-gold uppercase">
+                {item.city}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+
+      <section className="border-t border-white/8">
+        <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 lg:py-20">
+          <h2 className="font-heading text-4xl sm:text-5xl">
+            Ready when you are.
+          </h2>
+          <p className="mt-4 max-w-2xl text-lg text-silver">
+            Reserve a window, then pay the package total. If you need to move a
+            prepaid booking, message the shop.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href="/book"
+              className={cn(buttonVariants({ size: "lg" }), "h-12 px-6")}
+            >
+              Book
+            </Link>
+            <a
+              href={site.phoneTel}
+              className={cn(
+                buttonVariants({ variant: "outline", size: "lg" }),
+                "h-12 px-6",
+              )}
+            >
+              {site.phone}
+            </a>
+          </div>
         </div>
       </section>
     </div>

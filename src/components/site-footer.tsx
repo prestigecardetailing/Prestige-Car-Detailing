@@ -26,6 +26,7 @@ export function SiteFooter() {
             Service area
           </p>
           <p className="mt-2 text-sm text-silver">{site.serviceArea}.</p>
+          <p className="mt-2 text-sm text-gold">{site.mobileOnlyNote}</p>
         </div>
 
         <div>
