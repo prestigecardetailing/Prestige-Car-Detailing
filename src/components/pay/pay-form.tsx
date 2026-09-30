@@ -949,12 +949,12 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
 
             <div className="mt-6 space-y-2">
               <Label htmlFor="waiver-name">
-                Your full legal name{" "}
-                <span className="text-gold">(required — this is your signature)</span>
+                Your full legal name <span className="text-gold">(required)</span>
               </Label>
               <p className="text-xs leading-relaxed text-silver">
-                Type your full legal name exactly as it appears on your ID — first
-                and last name. Typing it here signs this waiver.
+                This is your signature. Type your full legal name exactly as it
+                appears on your ID — first and last name. Typing it here signs
+                this waiver.
               </p>
               <Input
                 id="waiver-name"

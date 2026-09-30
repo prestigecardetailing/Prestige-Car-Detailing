@@ -70,7 +70,6 @@ async function buildPdf(input: {
     signedAt.toISOString().slice(0, 10),
     WAIVER_VERSION,
   ]);
-  doc.setProducer("prestigecarwashsc.com");
   doc.setCreationDate(signedAt);
   doc.setModificationDate(signedAt);
 
