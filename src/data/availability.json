@@ -1,0 +1,23 @@
+{
+  "$comment": "Prestige-owned open-slot source. Prestige publishes two booking windows per open day — 9:00 AM and 2:30 PM Eastern (240-minute appointments) — and availability varies, so the calendar on /book is the only place that says what is actually open. The site never books through Google — finishing that form holds the slot before payment — so these windows are what /book and /api/open-slots serve. Edit this file, or set the PRESTIGE_AVAILABILITY env var to a JSON object with the same shape, when Emery opens or closes hours. Times are local wall-clock in `timeZone`, 24-hour HH:MM, and each entry is the START of one appointment window.",
+  "$confirmedWindows": "2026-09-29 (Derek): publish 9:00 AM and 2:30 PM Eastern. Availability varies — there is no per-day cap or sequencing rule on the public page, the calendar just shows what is open. Add weekday starts to `weekly` when Emery opens them.",
+  "timeZone": "America/New_York",
+  "slotMinutes": 240,
+  "leadTimeHours": 12,
+  "horizonDays": 21,
+  "rescheduleCutoffHours": 24,
+  "cancelCutoffHours": 24,
+  "lateCancelFeeCents": 3500,
+  "weekly": {
+    "sunday": ["09:00", "14:30"],
+    "monday": [],
+    "tuesday": [],
+    "wednesday": [],
+    "thursday": [],
+    "friday": [],
+    "saturday": ["09:00", "14:30"]
+  },
+  "extraDates": {},
+  "blackoutDates": [],
+  "blackoutSlots": []
+}
