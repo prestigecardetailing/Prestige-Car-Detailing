@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { OtherFeesButton } from "@/components/other-fees-button";
 import { buttonVariants } from "@/components/ui/button";
+import { servicePath } from "@/lib/booking-flow";
 import { packages, formatMoney } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
 import { site } from "@/lib/site";
@@ -27,16 +29,7 @@ export default function HomePage() {
                 href="/book"
                 className={cn(buttonVariants({ size: "lg" }), "h-12 px-6")}
               >
-                Book a window
-              </Link>
-              <Link
-                href="/pay"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "lg" }),
-                  "h-12 px-6",
-                )}
-              >
-                Pay in full
+                Book a Car Wash
               </Link>
             </div>
           </div>
@@ -70,7 +63,7 @@ export default function HomePage() {
           {packages.map((pkg) => (
             <Link
               key={pkg.id}
-              href={`/pay?package=${pkg.id}`}
+              href={servicePath({ packageId: pkg.id })}
               className={cn(
                 "rounded-xl bg-[#121216] p-6 ring-1 transition-colors",
                 pkg.featured
@@ -102,18 +95,18 @@ export default function HomePage() {
             {[
               {
                 n: "01",
-                title: "Choose a package",
+                title: "Choose your car wash",
                 body: "Interior Clean, Exterior Clean, or a combo. Combo interiors are the same full cabin reset as Interior Clean — not a quick wipe.",
               },
               {
                 n: "02",
-                title: "Book a window",
-                body: "Same-day is typical when the calendar is open. We come to you.",
+                title: "Pick an open time",
+                body: "Only the days and windows Emery has opened are selectable. You can do these two steps in either order.",
               },
               {
                 n: "03",
-                title: "Pay in full",
-                body: "Prepaid before the visit. If plans change, reschedule through the message form.",
+                title: "Details, waiver, pay",
+                body: "Once the wash and the time are both set we take your details, you sign the waiver, then Square takes the payment.",
               },
               {
                 n: "04",
@@ -187,7 +180,7 @@ export default function HomePage() {
               href="/book"
               className={cn(buttonVariants({ size: "lg" }), "h-12 px-6")}
             >
-              Book
+              Book a Car Wash
             </Link>
             <a
               href={site.phoneTel}
@@ -198,6 +191,21 @@ export default function HomePage() {
             >
               {site.phone}
             </a>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-white/8" id="other-fees">
+        <div className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6">
+          <h2 className="font-heading text-2xl sm:text-3xl">
+            Other fees and services
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-silver">
+            Not a package and not part of a booking — a quoted extra, a trip fee, or
+            a balance. It is charged through Square on its own.
+          </p>
+          <div className="mt-5">
+            <OtherFeesButton />
           </div>
         </div>
       </section>

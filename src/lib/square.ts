@@ -223,6 +223,75 @@ export async function createCheckout(
   };
 }
 
+/**
+ * A one-off charge that is not a car wash booking: "other fees and services".
+ * Deliberately carries no booking reference, no slot metadata, and no redirect
+ * back into the booking flow, so Square treats it as its own payment. Falls back
+ * to the open-amount payment link when the API is not configured.
+ */
+export async function createFeeCheckout(
+  description: string,
+  amountCents: number,
+  env: EnvLike = process.env,
+) {
+  const label = description.trim().slice(0, 200) || "Other fees and services";
+  const e = squareEnv(env);
+  const token = e.SQUARE_ACCESS_TOKEN;
+  const locationId = e.SQUARE_LOCATION_ID;
+
+  if (token && locationId && amountCents > 0) {
+    try {
+      const res = await fetch(
+        `${squareApiBase(env)}/v2/online-checkout/payment-links`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "Square-Version": SQUARE_VERSION,
+          },
+          body: JSON.stringify({
+            idempotency_key: crypto.randomUUID(),
+            description: `Prestige Car Wash — ${label}`,
+            order: {
+              location_id: locationId,
+              line_items: [
+                {
+                  name: label,
+                  quantity: "1",
+                  base_price_money: { amount: amountCents, currency: "USD" },
+                },
+              ],
+            },
+            checkout_options: {
+              allow_tipping: false,
+              ask_for_shipping_address: false,
+              enable_coupon: false,
+              enable_loyalty: false,
+            },
+            payment_note: `Prestige Car Wash other fee — ${label}`,
+          }),
+        },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const url = data.payment_link?.url as string | undefined;
+        if (url) return { url, amountCents, source: "square-api" as const };
+      } else {
+        console.error("Square other-fee link failed", { status: res.status });
+      }
+    } catch (err) {
+      console.error("Square other-fee link threw", err);
+    }
+  }
+
+  return {
+    url: openAmountLink(env),
+    amountCents,
+    source: "open-amount" as const,
+  };
+}
+
 export type SquarePaymentCheck = {
   paid: boolean;
   checked: boolean;

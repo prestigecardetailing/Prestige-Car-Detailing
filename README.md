@@ -11,26 +11,46 @@ Next.js App Router site for [prestigecarwashsc.com](https://prestigecarwashsc.co
 
 ## Booking is pay-first
 
-A calendar window is **never** reserved by picking it. The order is:
+A calendar window is **never** reserved by picking it. The destination order
+(Derek, 2026-09-30) is **car wash type → time slot → customer information →
+waiver → pay**:
 
-1. **Pick a time** — `/book` lists the windows Prestige currently has open
-   (4 hours each) from `GET /api/open-slots`.
-2. **Enter details** — `/book/details?slot=<id>` collects the caller info. First
+1. **Car wash type** — `/book/service` takes the package and any add-ons. Every
+   package and price on the site links here, so a price click never lands on the
+   customer-information screen.
+2. **Time slot** — `/book` shows the windows Emery has opened, from
+   `GET /api/open-slots`.
+
+   Steps 1 and 2 are interchangeable: a customer can start from a price or from
+   the calendar, finishes that step, and is sent to the other one. The selection
+   rides on the query string (`?package=&addons=&slot=`).
+3. **Customer information** — `/book/details?package=<id>&slot=<id>` collects the
+   caller info, and **only opens once both** the car wash type and the time slot
+   are chosen; until then it shows what is still missing and links back. First
    name, last name, callback phone, and the full service address (street, city,
    state, ZIP) are required; email is optional, and so is a password for an
-   account. "Continue to payment" is blocked until the required fields are
-   filled. Nothing is held on this screen either.
-3. **Pay** — `/pay?slot=<id>` carries the details over, takes the package
-   selection and the liability waiver, and hands off to Square.
-   `POST /api/checkout` writes a **pending** booking record; pending records do
-   not affect availability.
-4. Square confirms the charge → `POST /api/bookings/confirm` (from `/pay/success`)
+   account. Nothing is held on this screen either.
+4. **Waiver** — clicking Pay on `/pay?package=<id>&slot=<id>` opens the liability
+   waiver. It is a hard modal: agree and sign, or cancel the payment.
+5. **Pay** — signing hands off to Square. `POST /api/checkout` writes a
+   **pending** booking record; pending records do not affect availability.
+6. Square confirms the charge → `POST /api/bookings/confirm` (from `/pay/success`)
    or the Square webhook writes the **hold**, creates the Google Calendar event
    when credentials exist, texts the customer a confirmation, texts Emery and
    Derek, posts the record to the hub, and emails the shop.
 
 Abandoning Square, closing the tab, or a declined card leaves the window listed
 on `/book` for the next customer.
+
+### Other fees and services
+
+Separate from the packages and from any booking: the **"Other fees and services
+not included separate from above."** button at the bottom of `/`, `/services`, and
+`/pay` opens a small form — what the charge is for, and an amount. It posts to
+`POST /api/other-fee`, which creates a **standalone** Square payment link for that
+exact amount (no booking record, no slot hold, no waiver), and falls back to the
+open-amount `square.link` page when the Square API is not configured. Emery uses
+it on site: type "exterior wash", type the amount, charge it.
 
 ## Pages
 
@@ -40,7 +60,10 @@ on `/book` for the next customer.
 | `/services` | Packages, add-ons, and what to know before booking |
 | `/gallery` | 20 labeled placeholders. Nothing on it is a real job yet. |
 | `/about` | Who Emery is and what the business is built for |
-| `/book` → `/book/details` → `/pay` | The pay-first booking flow |
+| `/book/service` | Car wash type step — package and add-ons, no prices jumping to checkout |
+| `/book` | Time slot step — only the windows Emery opened are selectable |
+| `/book/details` | Customer information, unlocked once the wash and the time are both chosen |
+| `/pay` | Waiver + Square payment, the last screen of the flow |
 | `/pay/success` | Confirms the Square charge and writes the hold |
 | `/reschedule`, `/cancel` | Self-service booking changes |
 | `/account` | Optional account: sign in, see past washes |
@@ -278,21 +301,46 @@ The public Google Appointment Schedule iframe was removed on purpose: finishing 
 Google booking holds the slot immediately, before payment. `BOOKING_CALENDAR_URL`
 in `src/lib/site.ts` is kept as an admin-only reference.
 
-### Published booking windows
+### Availability is owner-set, never generated
 
-Prestige publishes **two** windows per open day: **9:00 AM and 2:30 PM Eastern**.
-Availability varies — `/book` and `GET /api/open-slots` show only what is actually
-open, and that calendar is the public answer to "when can you come?". There is no
-two-per-day cap and no sequencing rule anywhere in the public page: opening or
-closing a window is an edit to `src/data/availability.json` (or the
-`PRESTIGE_AVAILABILITY` override), nothing more.
+**HARD RULE (Derek, 2026-09-30):** a window is bookable only when Emery has put it
+on his availability for that **exact date**. There is no standing weekday pattern
+anywhere in the code, and no fallback to "shop hours" — `/book` draws every day in
+the horizon and grays out every day and time that is not open, so an unavailable
+time is visibly unbookable instead of quietly missing. If the availability source
+cannot be read, nothing is offered.
+
+Order of truth:
+
+1. **Emery's Google Calendar** — the availability middleman (Square is payments
+   only). When `GOOGLE_AVAILABILITY_CALENDAR_ID` (or `GOOGLE_CALENDAR_ID`) plus the
+   service-account vars are set, `/book` syncs automatically: Emery adds an event
+   titled **Open** on a window (a 2:30 PM event opens the 2:30 PM window) or on a
+   whole day (which opens `dayOpenTimes`), and the site offers exactly that with no
+   re-entry on the site. Any other event on that calendar counts as busy and pulls
+   the overlapping window down. A failed read opens nothing.
+2. **`src/data/availability.json`** — the same owner-set dates, kept as the mirror
+   for deploys without calendar credentials, and overridable at runtime with
+   `PRESTIGE_AVAILABILITY`.
+
+Current set (2026-09-30, until Emery changes it): **Thu Oct 1, Mon Oct 5, and Tue
+Oct 6, 2026 — the 2:30 PM window only.** That is a fixed list of dates, not a
+Mon/Tue/Thu rule and not a rotating weekly schedule.
 
 ### Changing open hours
 
-Edit `src/data/availability.json` and deploy:
+Emery's normal path is Google Calendar. Without calendar credentials, edit
+`src/data/availability.json` and deploy:
 
-- `weekly` — recurring start times per weekday, local 24-hour (`"09:00"`, `"14:30"`)
-- `extraDates` — one-off openings, `"2026-10-03": ["08:00"]`
+- `openDates` — the open dates and their window start times,
+  `"2026-10-01": ["14:30"]`. This is where availability normally lives.
+- `weekly` — optional recurring start times per weekday. **Ships empty**; nothing
+  is open because of the day of the week.
+- `displayTimes` — window times the `/book` grid draws for every day so closed
+  times show as grayed-out cells. Display only: a time here is never bookable
+  unless that exact date opens it.
+- `dayOpenTimes` — the window(s) an all-day "Open" calendar event opens
+- `gridDays` — how many days the grid always draws (open days beyond it still show)
 - `blackoutDates` / `blackoutSlots` — days or single windows to pull down
 - `slotMinutes` — appointment length (currently 240 = 4 hours)
 - `leadTimeHours` — how far ahead of "now" the first bookable window can be
@@ -307,27 +355,43 @@ JSON object with the same keys; it is merged over the file.
 
 ### `GET /api/open-slots`
 
-Positive list only — every window that is open and bookable right now, earliest
-first. If it is not in the list, do not offer it. Used by the site slot picker
-and, later, by the phone/voice agent.
+`slots` is a positive list — every window that is open and bookable right now,
+earliest first. If it is not in the list, do not offer it. `days` is the same
+answer as the drawable grid `/book` renders, one entry per day with each cell
+tagged `open`, `booked`, or `closed`; anything not `open` is grayed out and
+unbookable. `source` is `google-calendar`, `config`, or
+`google-calendar-unreachable` (in which case nothing is offered). Used by the site
+slot picker and, later, by the phone/voice agent.
 
 ```json
 {
   "timeZone": "America/New_York",
   "slotMinutes": 240,
-  "generatedAt": "2026-09-24T21:00:00.000Z",
+  "generatedAt": "2026-09-30T21:00:00.000Z",
+  "source": "config",
   "count": 1,
   "slots": [
     {
-      "id": "2026-10-03T0800",
-      "start": "2026-10-03T12:00:00.000Z",
-      "end": "2026-10-03T16:00:00.000Z",
-      "date": "2026-10-03",
-      "startTime": "08:00",
-      "endTime": "12:00",
+      "id": "2026-10-01T1430",
+      "start": "2026-10-01T18:30:00.000Z",
+      "end": "2026-10-01T22:30:00.000Z",
+      "date": "2026-10-01",
+      "startTime": "14:30",
+      "endTime": "18:30",
       "durationMinutes": 240,
-      "label": "Fri, Oct 3 · 8:00 AM – 12:00 PM EDT",
-      "bookUrl": "/pay?slot=2026-10-03T0800"
+      "label": "Thu, Oct 1 · 2:30 PM – 6:30 PM EDT",
+      "bookUrl": "/book/details?slot=2026-10-01T1430"
+    }
+  ],
+  "days": [
+    {
+      "date": "2026-10-01",
+      "dayLabel": "Thursday, October 1",
+      "openCount": 1,
+      "cells": [
+        { "id": "2026-10-01T0900", "startTime": "09:00", "timeLabel": "9:00 AM – 1:00 PM", "status": "closed", "slot": null },
+        { "id": "2026-10-01T1430", "startTime": "14:30", "timeLabel": "2:30 PM – 6:30 PM", "status": "open", "slot": { "...": "as above" } }
+      ]
     }
   ]
 }
@@ -347,6 +411,8 @@ upgrades a fallback.
 | `GOOGLE_CALENDAR_ID` | Calendar the paid hold is written to — the Prestige calendar address, or `primary` for the service account. |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Service account address. Share the Prestige calendar with it and grant "Make changes to events". |
 | `GOOGLE_SERVICE_ACCOUNT_KEY` | That service account's PEM private key (`\n` escapes are fine). |
+| `GOOGLE_AVAILABILITY_CALENDAR_ID` | Calendar Emery marks open days on, if it is not `GOOGLE_CALENDAR_ID`. With the service-account vars set, `/book` syncs bookable windows from it automatically. |
+| `GOOGLE_AVAILABILITY_KEYWORDS` | Comma-separated event-title markers that mean "open for bookings". Default `open,available,availability`. |
 | `GOOGLE_IMPERSONATED_USER` | Optional Workspace domain-wide delegation subject. |
 | `PRESTIGE_ADMIN_TOKEN` | Lets the shop confirm a hold by hand: `POST /api/bookings/confirm` with `{ "bookingId": "…", "adminToken": "…" }`. Used when a payment could not be verified automatically. |
 | `PRESTIGE_AVAILABILITY` | JSON override for `src/data/availability.json`. |

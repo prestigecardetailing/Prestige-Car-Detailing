@@ -1,18 +1,33 @@
 import availabilityFile from "@/data/availability.json";
 import { listHeldSlotIds } from "@/lib/booking-store";
+import {
+  type CalendarAvailability,
+  availabilitySyncConfigured,
+  listCalendarAvailability,
+} from "@/lib/google-calendar";
 
 /**
- * Site-owned availability. Google Appointment Schedules stay an *admin* view of
- * Emery's hours — the public site never books through them, because completing a
- * Google booking holds the slot before the customer has paid.
+ * Availability is owner-set, never generated.
  *
- * Prestige publishes two windows per open day, 9:00 AM and 2:30 PM Eastern.
- * Availability varies and the calendar is the only source of truth for what is
- * open — nothing here caps a day or sequences the two windows.
+ * HARD RULE (Derek, 2026-09-30): the booking page must not open a day just
+ * because it is a weekday, and must not fall back to "shop hours". A window is
+ * bookable only when Emery has explicitly put it on his availability source for
+ * that exact date. Everything else renders grayed out and unbookable. There is no
+ * standing weekday pattern anywhere in this file — `weekly` exists only because
+ * the owner may choose to fill it, and it ships empty.
  *
- * Source of truth is `src/data/availability.json`. To change hours without a
- * deploy, set the `PRESTIGE_AVAILABILITY` env var to a JSON object with the same
- * shape; its keys are merged over the file.
+ * Source of truth, in order:
+ *   1. Emery's Google Calendar, read live by `listCalendarAvailability` whenever
+ *      the GOOGLE_* availability env vars are set. He adds an event titled "Open"
+ *      on the days/windows he wants bookable; the site syncs from that with no
+ *      manual re-entry here. A failed read opens nothing.
+ *   2. `src/data/availability.json` (or the `PRESTIGE_AVAILABILITY` env var, whose
+ *      keys are merged over the file) — the same owner-set dates, kept as the
+ *      mirror for deploys that have no calendar credentials.
+ *
+ * Google Appointment Schedules stay an *admin* view only: the public site never
+ * books through them, because completing a Google booking would hold the slot
+ * before the customer has paid. Square is payments only.
  */
 
 export type AvailabilityConfig = {
@@ -30,10 +45,29 @@ export type AvailabilityConfig = {
    * cancellation of the whole job or of the interior portion.
    */
   lateCancelFeeCents: number;
-  /** Recurring weekly openings: weekday name -> list of local start times ("08:00"). */
+  /**
+   * Window start times the /book grid draws for every day so closed times are
+   * visible as grayed-out cells. Display only — a time here is never bookable
+   * unless that exact date also lists it in `openDates` (or on the calendar).
+   */
+  displayTimes: string[];
+  /**
+   * Start times an all-day "Open" calendar event opens. Used only when Emery
+   * marks a whole day open instead of a specific window.
+   */
+  dayOpenTimes: string[];
+  /** Days the /book grid shows at a minimum; open dates beyond it are still shown. */
+  gridDays: number;
+  /**
+   * Optional recurring openings: weekday name -> local start times ("08:00").
+   * Ships empty on purpose — nothing is open because of the day of the week.
+   */
   weekly: Record<string, string[]>;
-  /** One-off openings: "YYYY-MM-DD" -> list of local start times. */
-  extraDates: Record<string, string[]>;
+  /**
+   * The owner-set open dates: "YYYY-MM-DD" -> local start times. This is the
+   * normal way availability is expressed when the calendar sync is off.
+   */
+  openDates: Record<string, string[]>;
   /** Whole days that are closed: ["YYYY-MM-DD"]. */
   blackoutDates: string[];
   /** Single windows that are closed: ["2026-10-03T0800"]. */
@@ -67,6 +101,7 @@ const WEEKDAYS = [
   "saturday",
 ] as const;
 
+// Deliberately opens nothing: an unreadable config must never invent a day.
 const fallback: AvailabilityConfig = {
   timeZone: "America/New_York",
   slotMinutes: 240,
@@ -75,8 +110,11 @@ const fallback: AvailabilityConfig = {
   rescheduleCutoffHours: 24,
   cancelCutoffHours: 24,
   lateCancelFeeCents: 3500,
+  displayTimes: [],
+  dayOpenTimes: [],
+  gridDays: 14,
   weekly: {},
-  extraDates: {},
+  openDates: {},
   blackoutDates: [],
   blackoutSlots: [],
 };
@@ -100,11 +138,14 @@ function normalizeConfig(raw: Record<string, unknown>): AvailabilityConfig {
   const weekly: Record<string, string[]> = {};
   for (const day of WEEKDAYS) weekly[day] = normalizeTimes(weeklyRaw[day]);
 
-  const extraRaw = (raw.extraDates || {}) as Record<string, unknown>;
-  const extraDates: Record<string, string[]> = {};
-  for (const [date, times] of Object.entries(extraRaw)) {
+  const datesRaw = (raw.openDates || raw.extraDates || {}) as Record<
+    string,
+    unknown
+  >;
+  const openDates: Record<string, string[]> = {};
+  for (const [date, times] of Object.entries(datesRaw)) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-    extraDates[date] = normalizeTimes(times);
+    openDates[date] = normalizeTimes(times);
   }
 
   const num = (value: unknown, dflt: number, min: number, max: number) => {
@@ -136,8 +177,11 @@ function normalizeConfig(raw: Record<string, unknown>): AvailabilityConfig {
       0,
       100_000,
     ),
+    displayTimes: normalizeTimes(raw.displayTimes),
+    dayOpenTimes: normalizeTimes(raw.dayOpenTimes),
+    gridDays: num(raw.gridDays, fallback.gridDays, 1, 120),
     weekly,
-    extraDates,
+    openDates,
     blackoutDates: Array.isArray(raw.blackoutDates)
       ? raw.blackoutDates.map(String).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
       : [],
@@ -303,43 +347,148 @@ function buildSlot(
   };
 }
 
+/** Where the open days on this deploy came from. Surfaced on /book and the API. */
+export type AvailabilitySource =
+  | "google-calendar"
+  | "config"
+  | "google-calendar-unreachable";
+
+export type PublishedAvailability = {
+  config: AvailabilityConfig;
+  /** Every window the owner has set inside the horizon, before holds. */
+  slots: OpenSlot[];
+  source: AvailabilitySource;
+  detail?: string;
+};
+
+/** Dates the owner closed outright, from config plus all-day calendar events. */
+function closedDates(config: AvailabilityConfig, calendar: CalendarAvailability) {
+  return new Set([...config.blackoutDates, ...calendar.busyDates]);
+}
+
 /**
- * Every window Prestige has published inside the booking horizon, before holds
- * are subtracted. Sorted by start time.
+ * Owner-set open times per date. Google Calendar wins when it is readable; the
+ * config file is the mirror for deploys without calendar credentials. Neither
+ * path can produce a date the owner did not set.
  */
-export function publishedSlots(
+function openTimesByDate(
+  dates: string[],
+  config: AvailabilityConfig,
+  calendar: CalendarAvailability,
+): Map<string, string[]> {
+  const byDate = new Map<string, string[]>();
+  const known = new Set(dates);
+
+  if (calendar.status === "ok") {
+    for (const window of calendar.openWindows) {
+      if (!known.has(window.date)) continue;
+      const times = window.startTime ? [window.startTime] : config.dayOpenTimes;
+      const list = byDate.get(window.date) || [];
+      for (const time of times) if (!list.includes(time)) list.push(time);
+      byDate.set(window.date, list.sort());
+    }
+    return byDate;
+  }
+
+  if (calendar.status === "failed") return byDate;
+
+  for (const date of dates) {
+    const times = [
+      ...(config.weekly[weekdayName(date)] || []),
+      ...(config.openDates[date] || []),
+    ];
+    const unique = [...new Set(times)].sort();
+    if (unique.length > 0) byDate.set(date, unique);
+  }
+  return byDate;
+}
+
+function horizonDates(config: AvailabilityConfig, nowMs: number) {
+  const today = localDateString(nowMs, config.timeZone);
+  const dates: string[] = [];
+  for (let i = 0; i <= config.horizonDays; i += 1) dates.push(addDays(today, i));
+  return dates;
+}
+
+async function readCalendar(
+  config: AvailabilityConfig,
+  dates: string[],
+  env: Record<string, string | undefined>,
+): Promise<CalendarAvailability> {
+  if (!availabilitySyncConfigured(env)) {
+    return { status: "skipped", openWindows: [], busy: [], busyDates: [] };
+  }
+  const fromMs = zonedToUtcMs(dates[0], "00:00", config.timeZone);
+  const toMs = zonedToUtcMs(
+    addDays(dates[dates.length - 1], 1),
+    "00:00",
+    config.timeZone,
+  );
+  if (fromMs === null || toMs === null) {
+    return { status: "skipped", openWindows: [], busy: [], busyDates: [] };
+  }
+  return listCalendarAvailability(
+    {
+      fromIso: new Date(fromMs).toISOString(),
+      toIso: new Date(toMs).toISOString(),
+      timeZone: config.timeZone,
+    },
+    env,
+  );
+}
+
+/**
+ * Every window the owner has set inside the booking horizon, before holds are
+ * subtracted. Sorted by start time. An empty list is a valid answer and means
+ * nothing is open — it is never padded with a default.
+ */
+export async function publishedAvailability(
   now: Date = new Date(),
   env: Record<string, string | undefined> = process.env,
-): OpenSlot[] {
+): Promise<PublishedAvailability> {
   const config = availabilityConfig(env);
   const nowMs = now.getTime();
   const earliestMs = nowMs + config.leadTimeHours * 3_600_000;
-  const blackoutDates = new Set(config.blackoutDates);
+  const dates = horizonDates(config, nowMs);
+  const calendar = await readCalendar(config, dates, env);
+  const closed = closedDates(config, calendar);
   const blackoutSlots = new Set(config.blackoutSlots);
+  const byDate = openTimesByDate(dates, config, calendar);
 
-  const today = localDateString(nowMs, config.timeZone);
   const slots: OpenSlot[] = [];
   const seen = new Set<string>();
-
-  for (let i = 0; i <= config.horizonDays; i += 1) {
-    const date = addDays(today, i);
-    if (blackoutDates.has(date)) continue;
-    const times = [
-      ...(config.weekly[weekdayName(date)] || []),
-      ...(config.extraDates[date] || []),
-    ];
-    for (const startTime of [...new Set(times)].sort()) {
+  for (const date of dates) {
+    if (closed.has(date)) continue;
+    for (const startTime of byDate.get(date) || []) {
       const id = slotId(date, startTime);
       if (seen.has(id) || blackoutSlots.has(id)) continue;
       const slot = buildSlot(date, startTime, config);
       if (!slot) continue;
-      if (Date.parse(slot.start) < earliestMs) continue;
+      const startMs = Date.parse(slot.start);
+      if (startMs < earliestMs) continue;
+      const endMs = Date.parse(slot.end);
+      const collides = calendar.busy.some(
+        (range) => range.startMs < endMs && range.endMs > startMs,
+      );
+      if (collides) continue;
       seen.add(id);
       slots.push(slot);
     }
   }
 
-  return slots.sort((a, b) => a.start.localeCompare(b.start));
+  const source: AvailabilitySource =
+    calendar.status === "ok"
+      ? "google-calendar"
+      : calendar.status === "failed"
+        ? "google-calendar-unreachable"
+        : "config";
+
+  return {
+    config,
+    slots: slots.sort((a, b) => a.start.localeCompare(b.start)),
+    source,
+    detail: calendar.detail,
+  };
 }
 
 /** Published windows minus the ones a paid booking already holds. */
@@ -348,7 +497,128 @@ export async function listOpenSlots(
   env: Record<string, string | undefined> = process.env,
 ): Promise<OpenSlot[]> {
   const held = new Set(await listHeldSlotIds());
-  return publishedSlots(now, env).filter((slot) => !held.has(slot.id));
+  const { slots } = await publishedAvailability(now, env);
+  return slots.filter((slot) => !held.has(slot.id));
+}
+
+export type SlotCellStatus = "open" | "booked" | "closed";
+
+export type SlotCell = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  /** "9:00 AM – 1:00 PM" in the shop time zone. */
+  timeLabel: string;
+  status: SlotCellStatus;
+  /** Present only when the cell is bookable. */
+  slot: OpenSlot | null;
+};
+
+export type SlotDay = {
+  date: string;
+  /** "Thursday, October 1" in the shop time zone. */
+  dayLabel: string;
+  cells: SlotCell[];
+  openCount: number;
+};
+
+export type SlotGrid = {
+  timeZone: string;
+  slotMinutes: number;
+  source: AvailabilitySource;
+  detail?: string;
+  days: SlotDay[];
+  openCount: number;
+};
+
+function dayLabel(date: string, timeZone: string) {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(new Date(Date.UTC(y, m - 1, d, 12)));
+}
+
+function cellTimeLabel(startTime: string, config: AvailabilityConfig) {
+  const fmt = (time: string) => {
+    const [h, m] = time.split(":").map(Number);
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "UTC",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(Date.UTC(2000, 0, 1, h, m)));
+  };
+  return `${fmt(startTime)} – ${fmt(addMinutesToTime(startTime, config.slotMinutes))}`;
+}
+
+/**
+ * The calendar the /book page draws: one row per day, one cell per published
+ * window time. Only the windows the owner set for that exact date come back as
+ * `open`; every other cell is `closed` so the page can gray it out instead of
+ * pretending it is bookable.
+ */
+export async function listSlotGrid(
+  now: Date = new Date(),
+  env: Record<string, string | undefined> = process.env,
+): Promise<SlotGrid> {
+  const held = new Set(await listHeldSlotIds());
+  const { config, slots, source, detail } = await publishedAvailability(now, env);
+  const openById = new Map(
+    slots.filter((slot) => !held.has(slot.id)).map((slot) => [slot.id, slot]),
+  );
+  const publishedById = new Map(slots.map((slot) => [slot.id, slot]));
+
+  const today = localDateString(now.getTime(), config.timeZone);
+  const lastOpenDate = slots.length > 0 ? slots[slots.length - 1].date : today;
+  const days: SlotDay[] = [];
+  for (let i = 0; i <= config.horizonDays; i += 1) {
+    const date = addDays(today, i);
+    if (i >= config.gridDays && date > lastOpenDate) break;
+
+    const times = [
+      ...new Set([
+        ...config.displayTimes,
+        ...slots.filter((slot) => slot.date === date).map((s) => s.startTime),
+      ]),
+    ].sort();
+    if (times.length === 0) continue;
+
+    const cells: SlotCell[] = times.map((startTime) => {
+      const id = slotId(date, startTime);
+      const open = openById.get(id) || null;
+      const status: SlotCellStatus = open
+        ? "open"
+        : publishedById.has(id)
+          ? "booked"
+          : "closed";
+      return {
+        id,
+        startTime,
+        endTime: addMinutesToTime(startTime, config.slotMinutes),
+        timeLabel: cellTimeLabel(startTime, config),
+        status,
+        slot: open,
+      };
+    });
+
+    days.push({
+      date,
+      dayLabel: dayLabel(date, config.timeZone),
+      cells,
+      openCount: cells.filter((cell) => cell.status === "open").length,
+    });
+  }
+
+  return {
+    timeZone: config.timeZone,
+    slotMinutes: config.slotMinutes,
+    source,
+    detail,
+    days,
+    openCount: openById.size,
+  };
 }
 
 /**

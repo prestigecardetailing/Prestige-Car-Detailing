@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { OtherFeesButton } from "@/components/other-fees-button";
 import { buttonVariants } from "@/components/ui/button";
+import { servicePath } from "@/lib/booking-flow";
 import { addons, formatMoney, packages } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
 import { site } from "@/lib/site";
@@ -45,10 +47,10 @@ export default function ServicesPage() {
               ))}
             </ul>
             <Link
-              href={`/pay?package=${pkg.id}`}
+              href={servicePath({ packageId: pkg.id })}
               className={cn(buttonVariants({ size: "lg" }), "mt-6 h-11 px-5")}
             >
-              Pay {pkg.name}
+              Choose {pkg.name}
             </Link>
           </article>
         ))}
@@ -94,10 +96,24 @@ export default function ServicesPage() {
             <strong className="text-gold">{site.mobileOnlyNote}</strong>
           </li>
           <li>
-            Bookings run at {site.bookingWindows}. Availability varies — the
-            calendar on the Book page shows the open windows.
+            Bookings run at {site.bookingWindows}, and only on the days Emery has
+            opened. The calendar on the Book page is the whole answer — anything
+            grayed out there is not available.
           </li>
         </ul>
+      </section>
+
+      <section className="mt-16">
+        <h2 className="font-heading text-2xl sm:text-3xl">
+          Other fees and services
+        </h2>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-silver">
+          Separate from the packages above and from any booking — charged through
+          Square on its own.
+        </p>
+        <div className="mt-5">
+          <OtherFeesButton />
+        </div>
       </section>
     </div>
   );

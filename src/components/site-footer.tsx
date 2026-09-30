@@ -38,11 +38,6 @@ export function SiteFooter() {
               </Link>
             </li>
             <li>
-              <Link href="/pay" className="text-silver hover:text-foreground">
-                Pay in full
-              </Link>
-            </li>
-            <li>
               <Link
                 href="/reschedule"
                 className="text-silver hover:text-foreground"

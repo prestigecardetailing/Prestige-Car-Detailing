@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { OtherFeesButton } from "@/components/other-fees-button";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   addons,
   formatMoney,
@@ -14,6 +14,11 @@ import {
   packages,
   resolveSelection,
 } from "@/lib/catalog";
+import {
+  parseAddonIds,
+  servicePath,
+  timePath,
+} from "@/lib/booking-flow";
 import {
   type ContactDraft,
   clearPendingBooking,
@@ -65,14 +70,6 @@ const CONTACT_FIELD_INPUT_ID: Record<string, string> = {
   email: "contact-email",
 };
 
-function parseAmountCents(raw: string) {
-  const cleaned = raw.replace(/[^0-9.]/g, "");
-  if (!cleaned) return null;
-  const n = Number.parseFloat(cleaned);
-  if (!Number.isFinite(n) || n < 0.01) return null;
-  return Math.round(n * 100);
-}
-
 function formatEastern(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -118,7 +115,9 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const [packageId, setPackageId] = useState(
     fromQuery || initialPackage || packages[0]?.id || "interior",
   );
-  const [addonIds, setAddonIds] = useState<string[]>([]);
+  const [addonIds, setAddonIds] = useState<string[]>(
+    parseAddonIds(searchParams.get("addons")),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,8 +138,6 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const [savingWaiver, setSavingWaiver] = useState(false);
   const waiverRef = useRef<HTMLDivElement>(null);
 
-  const [otherReason, setOtherReason] = useState("");
-  const [otherAmount, setOtherAmount] = useState("");
   const [remoteConfig, setRemoteConfig] = useState<{
     key: string;
     value: ReturnType<typeof payConfigForSelection>;
@@ -171,8 +168,8 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
   const waiverSigned =
     agreed && signerName.trim().length >= 2 && !!agreedAt;
   const squareOpen = openAmountLink();
-  const otherCents = parseAmountCents(otherAmount);
-  const otherReady = !!(otherReason.trim() && otherCents);
+  // Both halves of the booking come in on the query string from the earlier steps.
+  const flowSelection = { packageId, addonIds, slotId: slot?.id || slotId };
   // Reading to the end is asked for, not enforced: checking the box and signing
   // is what unlocks payment.
   const canSubmitWaiver =
@@ -506,27 +503,6 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
     openWaiverForPay();
   }
 
-  async function payOtherFee() {
-    if (!otherReady || !otherCents) return;
-    if (hostedOnNetlify()) {
-      await fetch("/", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: toQuery({
-          "form-name": "other-fee",
-          description: otherReason.trim().slice(0, 200),
-          amount: formatMoney(otherCents),
-        }),
-      }).catch(() => null);
-    }
-    await notifyOwnerFromBrowser({
-      subject: "Prestige Car Wash other-fee",
-      name: "Other fee",
-      message: `Description: ${otherReason.trim().slice(0, 200)}\nAmount: ${formatMoney(otherCents)}`,
-    }).catch(() => null);
-    window.location.assign(squareOpen);
-  }
-
   useEffect(() => {
     const params = new URLSearchParams({
       packageId,
@@ -626,7 +602,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
               </p>
               <div className="mt-4 flex flex-wrap gap-3">
                 <Link
-                  href="/book"
+                  href={timePath(flowSelection)}
                   className={cn(
                     buttonVariants({ variant: "outline" }),
                     "h-10 px-4",
@@ -658,7 +634,7 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
                 schedule.
               </p>
               <Link
-                href="/book"
+                href={timePath(flowSelection)}
                 className={cn(
                   buttonVariants({ variant: "outline" }),
                   "mt-4 h-10 px-4",
@@ -669,7 +645,26 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
             </>
           )}
         </div>
-      ) : null}
+      ) : (
+        <div
+          className="rounded-xl bg-[#121216] p-5 ring-1 ring-white/10 sm:p-6"
+          data-testid="no-slot-notice"
+        >
+          <p className="text-xs tracking-[0.24em] text-gold uppercase">
+            No window picked
+          </p>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-silver">
+            A car wash booking needs a time. Pick one of the open windows and you
+            come straight back here for the waiver and payment.
+          </p>
+          <Link
+            href={timePath(flowSelection)}
+            className={cn(buttonVariants({ variant: "outline" }), "mt-4 h-10 px-4")}
+          >
+            Pick an open time
+          </Link>
+        </div>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="space-y-8">
@@ -710,6 +705,43 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
             )}
           </section>
 
+          {fromQuery ? (
+            <section data-testid="chosen-car-wash">
+              <h2 className="font-heading text-xl">Car wash</h2>
+              <div className="mt-4 rounded-xl bg-gold/8 p-5 ring-1 ring-gold/50">
+                <div className="flex flex-wrap items-baseline justify-between gap-3">
+                  <p className="font-medium text-foreground">
+                    {selection.pkg.name}
+                  </p>
+                  <p className="text-gold">
+                    {formatMoney(selection.pkg.priceCents)}
+                  </p>
+                </div>
+                <p className="mt-2 text-sm leading-relaxed text-silver">
+                  {selection.pkg.summary}
+                </p>
+                {selection.selectedAddons.length > 0 ? (
+                  <ul className="mt-3 space-y-1 text-sm text-silver">
+                    {selection.selectedAddons.map((addon) => (
+                      <li key={addon.id}>
+                        + {addon.name} ({formatMoney(addon.priceCents)})
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <Link
+                  href={servicePath(flowSelection)}
+                  className={cn(
+                    buttonVariants({ variant: "outline" }),
+                    "mt-4 h-10 px-4",
+                  )}
+                >
+                  Change car wash
+                </Link>
+              </div>
+            </section>
+          ) : (
+          <>
           <fieldset>
             <legend className="font-heading text-xl">Package</legend>
             <div className="mt-4 grid gap-3">
@@ -800,6 +832,8 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
               })}
             </div>
           </fieldset>
+          </>
+          )}
         </div>
 
         <aside className="lg:sticky lg:top-28 lg:self-start">
@@ -996,74 +1030,18 @@ export function PayForm({ initialPackage }: { initialPackage?: string }) {
 
       <section
         id="other-fees"
-        className="rounded-xl border border-gold/30 bg-[#121216] p-6 ring-1 ring-white/10 sm:p-8"
+        className="border-t border-white/10 pt-8"
       >
-        <p className="text-xs font-medium tracking-[0.28em] text-gold uppercase">
-          Separate from packages
+        <h2 className="font-heading text-2xl">Other fees and services</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-silver">
+          A quoted extra, a trip fee, or a balance — separate from the car wash
+          above and charged through Square on its own. No waiver is needed.
         </p>
-        <h2 className="font-heading mt-2 text-2xl">Other fees & services</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-silver sm:text-base">
-          Use this for a quoted extra, a balance, or any charge that is not a
-          listed package. No waiver is required here. Square will ask you to
-          type the amount.
-        </p>
-        <div className="mt-6 grid gap-5 sm:grid-cols-[1.4fr_0.8fr]">
-          <div className="space-y-2">
-            <Label htmlFor="other-reason">What this charge is for</Label>
-            <Textarea
-              id="other-reason"
-              value={otherReason}
-              onChange={(e) => setOtherReason(e.target.value)}
-              maxLength={200}
-              placeholder="Trip fee, extra stain work, remaining balance…"
-              className="min-h-24"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="other-amount">Amount</Label>
-            <Input
-              id="other-amount"
-              inputMode="decimal"
-              value={otherAmount}
-              onChange={(e) => setOtherAmount(e.target.value)}
-              placeholder="25.00"
-              className="h-11"
-            />
-          </div>
+        <div className="mt-5">
+          <OtherFeesButton />
         </div>
-        {otherReason.trim() && otherCents ? (
-          <p className="mt-4 text-sm text-gold" role="status">
-            You are paying {formatMoney(otherCents)} for “
-            {otherReason.trim()}”. Enter {formatMoney(otherCents)} on the Square
-            screen.
-          </p>
-        ) : (
-          <p className="mt-4 text-sm text-silver">
-            Type what the charge is for and an amount, then continue to Square.
-          </p>
-        )}
-        <a
-          href={otherReady ? squareOpen : undefined}
-          className={cn(
-            buttonVariants({ size: "lg" }),
-            "mt-5 h-12 px-6",
-            !otherReady && "pointer-events-none opacity-50",
-          )}
-          aria-disabled={!otherReady}
-          onClick={(e) => {
-            if (otherReady) {
-              e.preventDefault();
-              void payOtherFee();
-            } else {
-              e.preventDefault();
-            }
-          }}
-        >
-          {otherCents
-            ? `Pay ${formatMoney(otherCents)} on Square`
-            : "Pay this amount on Square"}
-        </a>
       </section>
+
     </div>
   );
 }
