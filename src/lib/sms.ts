@@ -5,7 +5,12 @@ import { site } from "@/lib/site";
 import { availabilityConfig } from "@/lib/slots";
 
 /**
- * Post-payment confirmation text.
+ * Post-payment texts: the customer's confirmation, and the owner alerts that
+ * `src/lib/owner-notify.ts` sends to Emery and Derek. Both use `sendSms` below,
+ * so there is one rail, one masking rule, and one never-throws contract.
+ *
+ * The owner destinations are private numbers and live in `owner-notify.ts`, which
+ * is server-side only. Nothing in this file hard-codes a recipient.
  *
  * Two rails, picked in this order, and a safe no-op when neither is configured.
  *
@@ -191,13 +196,28 @@ async function sendViaTwilio(
   }
 }
 
-export async function sendBookingConfirmationSms(
-  record: BookingRecord,
+export type SendSmsInput = {
+  /** Raw or E.164 — normalized here, and skipped when it is not a US number. */
+  to: string | undefined;
+  body: string;
+  /** Tag carried to the proxy rail and into the logs. */
+  kind: "booking-confirmation" | "owner-booking-alert";
+  /** Booking reference, for correlating logs on either rail. */
+  reference: string;
+};
+
+/**
+ * One text, on whichever rail this deploy has. Used for the customer's booking
+ * confirmation and for the owner alerts — same rails, same masking, same
+ * never-throws contract.
+ */
+export async function sendSms(
+  input: SendSmsInput,
   env: EnvLike = process.env,
 ): Promise<SmsResult> {
-  const phone = normalizePhone(record.customer.phone);
+  const phone = normalizePhone(input.to);
   if (!phone) {
-    return { status: "skipped", detail: "No usable phone on the booking" };
+    return { status: "skipped", detail: "No usable phone for this message" };
   }
 
   const from = (env.PRESTIGE_SMS_FROM || env.TWILIO_FROM_NUMBER || "").trim();
@@ -213,13 +233,12 @@ export async function sendBookingConfirmationSms(
     };
   }
 
-  const body = bookingConfirmationText(record, env);
   const payload = {
-    kind: "booking-confirmation" as const,
+    kind: input.kind,
     to: phone.e164,
     ...(from ? { from } : {}),
-    body,
-    bookingRef: record.id,
+    body: input.body,
+    bookingRef: input.reference,
     source: site.domain,
   };
 
@@ -230,26 +249,28 @@ export async function sendBookingConfirmationSms(
   if (!url && !twilio) {
     // No rail yet: log the exact payload (phone masked) so Systems can wire it.
     console.info(
-      "[sms:stub] booking-confirmation",
+      `[sms:stub] ${input.kind}`,
       JSON.stringify({ ...payload, to: maskPhone(phone.e164) }, null, 2),
     );
     return {
       status: "stubbed",
       to: maskPhone(phone.e164),
-      body,
+      body: input.body,
       detail:
         "No SMS rail configured (TWILIO_FROM_NUMBER + credentials, or PRESTIGE_SMS_API_URL) — payload logged, nothing sent",
     };
   }
 
-  if (twilio) return sendViaTwilio(twilio, phone.e164, body, record.id);
+  if (twilio) {
+    return sendViaTwilio(twilio, phone.e164, input.body, input.reference);
+  }
 
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Prestige-Booking": record.id,
+        "X-Prestige-Booking": input.reference,
         ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
       },
       body: JSON.stringify(payload),
@@ -263,23 +284,23 @@ export async function sendBookingConfirmationSms(
       return {
         status: "failed",
         to: maskPhone(phone.e164),
-        body,
+        body: input.body,
         detail: `HTTP ${res.status}${data?.error ? ` ${data.error}` : ""}`,
       };
     }
     console.info(
-      "[sms:sent] booking-confirmation",
+      `[sms:sent] ${input.kind}`,
       JSON.stringify({
         to: maskPhone(phone.e164),
-        bookingRef: record.id,
+        bookingRef: input.reference,
         provider: data.sid || "systems-endpoint",
-        chars: body.length,
+        chars: input.body.length,
       }),
     );
     return {
       status: "sent",
       to: maskPhone(phone.e164),
-      body,
+      body: input.body,
       provider: data.sid || "systems-endpoint",
       sentAt: new Date().toISOString(),
     };
@@ -288,8 +309,23 @@ export async function sendBookingConfirmationSms(
     return {
       status: "failed",
       to: maskPhone(phone.e164),
-      body,
+      body: input.body,
       detail: "exception",
     };
   }
+}
+
+export async function sendBookingConfirmationSms(
+  record: BookingRecord,
+  env: EnvLike = process.env,
+): Promise<SmsResult> {
+  return sendSms(
+    {
+      to: record.customer.phone,
+      body: bookingConfirmationText(record, env),
+      kind: "booking-confirmation",
+      reference: record.id,
+    },
+    env,
+  );
 }

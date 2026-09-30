@@ -148,6 +148,21 @@ async function createSquarePaymentLink(
             : {}),
         },
       },
+      // Automatic customer receipt email (Derek, item 14):
+      // Square sends the receipt itself — it is the default behaviour of the
+      // Payment Links / Online Checkout flow and there is no API flag on
+      // `checkout_options` to turn it on. The buyer gets it at whichever email
+      // Square has for the payment: the one pre-populated below, or the one they
+      // type on the Square screen. Nothing here suppresses it, and we deliberately
+      // do not set anything that would.
+      // Two things have to stay true for it to actually land:
+      //   1. `pre_populated_data.buyer_email` is sent whenever we have an email
+      //      (see below) so the buyer does not have to retype it.
+      //   2. Square Dashboard → Settings → Customer receipts stays enabled on the
+      //      Prestige location.
+      // The site's own confirmation text is still sent separately: Square's
+      // receipt cannot carry the window, the service address, or the cancellation
+      // terms.
       checkout_options: {
         allow_tipping: false,
         ask_for_shipping_address: false,

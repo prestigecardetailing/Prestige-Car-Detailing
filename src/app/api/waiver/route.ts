@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { postToHub } from "@/lib/hub-ingest";
 import { notifyOwnerFromServer } from "@/lib/notify-owner";
 
 type WaiverBody = {
@@ -43,6 +44,15 @@ export async function POST(request: NextRequest) {
     message,
     pdf: body.pdfUrl || "",
   }).catch(() => ({ status: "failed" as const }));
+
+  await postToHub("waiver", body.pdfFilename || name, {
+    signerName: name,
+    agreedAt,
+    packageId: body.packageId || null,
+    addonIds: body.addonIds || [],
+    pdfUrl: body.pdfUrl || null,
+    pdfFilename: body.pdfFilename || null,
+  }).catch(() => null);
 
   return NextResponse.json({ ok: true, delivered: notify.status === "sent" });
 }
