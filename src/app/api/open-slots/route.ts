@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { availabilityConfig, listOpenSlots } from "@/lib/slots";
+import { availabilityConfig, listOpenSlots, listSlotGrid } from "@/lib/slots";
 
 export const dynamic = "force-dynamic";
 
@@ -33,27 +33,40 @@ export const dynamic = "force-dynamic";
  * }
  *
  * Slots are sorted earliest first and are always in the future by at least the
- * configured lead time.
+ * configured lead time. Availability is whatever the owner set for that exact
+ * date — on his Google Calendar, or in `src/data/availability.json`. No weekday
+ * pattern is ever generated, so an empty list means nothing is open.
  *
- * `bookUrl` is step 2 of the booking flow — the contact step. The full sequence
- * is /book (pick a window) → /book/details?slot=<id> (name, phone, and service
- * address required; email optional) → /pay?slot=<id> (waiver + Square). The slot
- * is held only after Square confirms the payment, so a caller who drops out at
- * any point leaves the window in this list.
+ * `days` carries the same answer as a drawable grid for the /book page: one entry
+ * per day, each cell tagged `open`, `booked`, or `closed`. Cells that are not
+ * `open` exist so the page can gray them out; they are not bookable.
+ *
+ * `source` is "google-calendar" when the live calendar was read, "config" when the
+ * checked-in availability file was used, or "google-calendar-unreachable" when the
+ * calendar could not be read — in which case nothing is offered.
+ *
+ * `bookUrl` is the customer-information step. The full sequence is /book/service
+ * (pick the car wash type) and /book (pick a window) in either order, then
+ * /book/details?slot=<id>&package=<id> (name, phone, and service address
+ * required; email optional) → /pay?slot=<id>&package=<id> (waiver + Square). The
+ * slot is held only after Square confirms the payment, so a caller who drops out
+ * at any point leaves the window in this list.
  */
 export async function GET() {
   const config = availabilityConfig();
-  const slots = await listOpenSlots();
+  const [slots, grid] = await Promise.all([listOpenSlots(), listSlotGrid()]);
   return NextResponse.json(
     {
       timeZone: config.timeZone,
       slotMinutes: config.slotMinutes,
       generatedAt: new Date().toISOString(),
+      source: grid.source,
       count: slots.length,
       slots: slots.map((slot) => ({
         ...slot,
         bookUrl: `/book/details?slot=${encodeURIComponent(slot.id)}`,
       })),
+      days: grid.days,
     },
     {
       headers: {

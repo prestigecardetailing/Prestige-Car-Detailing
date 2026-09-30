@@ -1,6 +1,7 @@
 {
-  "$comment": "Prestige-owned open-slot source. Prestige publishes two booking windows per open day — 9:00 AM and 2:30 PM Eastern (240-minute appointments) — and availability varies, so the calendar on /book is the only place that says what is actually open. The site never books through Google — finishing that form holds the slot before payment — so these windows are what /book and /api/open-slots serve. Edit this file, or set the PRESTIGE_AVAILABILITY env var to a JSON object with the same shape, when Emery opens or closes hours. Times are local wall-clock in `timeZone`, 24-hour HH:MM, and each entry is the START of one appointment window.",
-  "$confirmedWindows": "2026-09-29 (Derek): publish 9:00 AM and 2:30 PM Eastern. Availability varies — there is no per-day cap or sequencing rule on the public page, the calendar just shows what is open. Add weekday starts to `weekly` when Emery opens them.",
+  "$comment": "Owner-set availability. HARD RULE (Derek, 2026-09-30): nothing is bookable unless it is listed here for that exact date, or marked open on Emery's Google Calendar. There is no standing weekday pattern and no fallback to shop hours — the booking page grays out every day and time that is not listed. `openDates` maps a local date to the START times of the appointment windows that are open that day; `weekly` exists only if Emery ever wants a recurring day and ships empty. Times are local wall-clock in `timeZone`, 24-hour HH:MM. Edit this file, or set the PRESTIGE_AVAILABILITY env var to a JSON object with the same shape, to change availability without a deploy.",
+  "$googleCalendar": "Source of truth is Emery's Google Calendar (Option C: Google Calendar is the availability middleman, Square is payments only). When GOOGLE_AVAILABILITY_CALENDAR_ID (or GOOGLE_CALENDAR_ID) plus the service-account vars are set, /book syncs from it automatically: Emery adds an event titled \"Open\" on a window or a whole day and the site offers exactly that, with no re-entry here. Anything else on that calendar counts as busy and removes the overlapping window. If the calendar read fails, the site opens nothing rather than guessing. `openDates` below is the mirror used on deploys without calendar credentials.",
+  "$confirmedDates": "2026-09-30 (Derek): the only open days until he says otherwise are Thu Oct 1, Mon Oct 5, and Tue Oct 6, 2026 — 2:30 PM window only. This is not a rotating weekly rule and not a Mon/Tue/Thu pattern; it is a fixed set of dates that stays until the owner changes it on Google Calendar or in this file.",
   "timeZone": "America/New_York",
   "slotMinutes": 240,
   "leadTimeHours": 12,
@@ -8,16 +9,23 @@
   "rescheduleCutoffHours": 24,
   "cancelCutoffHours": 24,
   "lateCancelFeeCents": 3500,
+  "displayTimes": ["09:00", "14:30"],
+  "dayOpenTimes": ["14:30"],
+  "gridDays": 14,
+  "openDates": {
+    "2026-10-01": ["14:30"],
+    "2026-10-05": ["14:30"],
+    "2026-10-06": ["14:30"]
+  },
   "weekly": {
-    "sunday": ["09:00", "14:30"],
+    "sunday": [],
     "monday": [],
     "tuesday": [],
     "wednesday": [],
     "thursday": [],
     "friday": [],
-    "saturday": ["09:00", "14:30"]
+    "saturday": []
   },
-  "extraDates": {},
   "blackoutDates": [],
   "blackoutSlots": []
 }
