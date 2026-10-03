@@ -67,7 +67,7 @@ it on site: type "exterior wash", type the amount, charge it.
 | `/pay/success` | Confirms the Square charge and writes the hold |
 | `/reschedule`, `/cancel` | Self-service booking changes |
 | `/account` | Optional account: sign in, see past washes |
-| `/contact` | The message form. Labeled **"Message the shop"** everywhere it is linked; the URL stays `/contact`. |
+| `/contact` | The message form. Labeled **"Message the shop"** everywhere it is linked; the URL stays `/contact`. Shows `site.email` next to the shop phone. |
 | `/privacy` | Prestige-only privacy policy |
 
 ### Caller info required before any booking confirm
@@ -134,7 +134,11 @@ hold, the calendar event, or each other:
    rides the existing `notifyOwnerFromServer` path, so the inbox is whatever the
    `WEB3FORMS_ACCESS_KEY` (or the FormSubmit hash) is registered to. **That key
    has to point at mcelreath.intelligence@gmail.com** — the address is not a
-   request parameter on either provider.
+   request parameter on either provider. This is the delivery inbox, not the
+   address customers are given: the public one is `site.email`,
+   **mcelreath@prestigecarwashsc.com**, a Namecheap forward into this same
+   inbox. Changing what the site shows never moves delivery, and the provider
+   key must not be repointed at the forwarding address.
 2. **SMS to Emery** and **SMS to Derek** at their private mobile numbers.
 3. **Customer confirmation SMS** with the window, address, package, amount, and
    the cancellation terms (see below).

@@ -13,6 +13,13 @@ export const site = {
   bookingWindows: "9:00 AM or 2:30 PM Eastern",
   phone: "864-619-4911",
   phoneTel: "tel:+18646194911",
+  /**
+   * The company address customers are given. It forwards to the inbox the
+   * form/email provider is keyed to, so changing this never moves delivery —
+   * see OWNER_EMAIL in src/lib/owner-notify.ts for that.
+   */
+  email: "mcelreath@prestigecarwashsc.com",
+  emailHref: "mailto:mcelreath@prestigecarwashsc.com",
 } as const;
 
 export const navItems = [
