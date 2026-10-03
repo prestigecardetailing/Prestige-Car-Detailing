@@ -22,6 +22,10 @@ export default function ContactPage() {
           call{" "}
           <a href={site.phoneTel} className="text-gold hover:text-foreground">
             {site.phone}
+          </a>{" "}
+          or email{" "}
+          <a href={site.emailHref} className="text-gold hover:text-foreground">
+            {site.email}
           </a>
           .
         </p>

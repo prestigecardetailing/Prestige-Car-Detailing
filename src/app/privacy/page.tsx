@@ -16,7 +16,7 @@ const sections: { title: string; body: string[] }[] = [
     title: "Who operates this",
     body: [
       "Prestige Car Wash LLC (“Prestige,” “we,” “us”) is a South Carolina mobile detailing business. This policy covers prestigecarwashsc.com and the detailing work booked through it. It does not cover any other product or app.",
-      "The public shop phone is 864-619-4911. Privacy questions and deletion requests go to mcelreath.intelligence@gmail.com — not a personal cell number.",
+      `The public shop phone is 864-619-4911. Privacy questions and deletion requests go to ${site.email} — not a personal cell number.`,
     ],
   },
   {
@@ -98,7 +98,7 @@ const sections: { title: string; body: string[] }[] = [
   {
     title: "How to contact us or request deletion",
     body: [
-      "Privacy contact: mcelreath.intelligence@gmail.com. Use that address for access, correction, or deletion requests about this website.",
+      `Privacy contact: ${site.email}. Use that address for access, correction, or deletion requests about this website.`,
       "For a booking, payment, or refund question, call or text the shop at 864-619-4911, or use the message form on this site.",
     ],
   },
@@ -111,7 +111,7 @@ const sections: { title: string; body: string[] }[] = [
   {
     title: "Privacy email",
     body: [
-      "Send privacy questions and deletion requests to mcelreath.intelligence@gmail.com. Effective date: September 29, 2026.",
+      `Send privacy questions and deletion requests to ${site.email}. Effective date: September 29, 2026.`,
     ],
   },
 ];
@@ -131,10 +131,10 @@ export default function PrivacyPage() {
         <p className="mt-3 text-sm leading-relaxed text-silver">
           Email{" "}
           <a
-            href="mailto:mcelreath.intelligence@gmail.com"
+            href={site.emailHref}
             className="text-gold hover:text-foreground"
           >
-            mcelreath.intelligence@gmail.com
+            {site.email}
           </a>{" "}
           for access, correction, or deletion requests. For a booking or payment
           question, call or text the shop at{" "}
